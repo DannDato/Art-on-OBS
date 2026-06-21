@@ -1,0 +1,60 @@
+# ---------------------------------------------
+# Global OS/editor noise
+# ---------------------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ---------------------------------------------
+# Dependency directories
+# ---------------------------------------------
+node_modules/
+**/node_modules/
+
+
+
+# ---------------------------------------------
+# Logs and runtime files
+# ---------------------------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+/backend/logs/
+
+# ---------------------------------------------
+# Environment and secrets
+# ---------------------------------------------
+.env
+.env.*
+!.env.example
+
+
+# ---------------------------------------------
+# Caches and temp
+# ---------------------------------------------
+.cache/
+tmp/
+temp/
+*.local
+cancelled.psd
+
+# ---------------------------------------------
+# Project-specific
+# ---------------------------------------------
+/frontend/public/img/banner.gif
+**/client_secret*.json
+client_secret*

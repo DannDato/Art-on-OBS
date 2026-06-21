@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Overlay Control</title>
+<style>
+/* ── Reset & base ─────────────────────────────────────────────── */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --bg:       #0e0e12;
+  --surface:  #18181f;
+  --border:   #2a2a38;
+  --accent:   #7c6cfa;
+  --accent2:  #fa6c9f;
+  --text:     #e2e2f0;
+  --muted:    #6b6b8a;
+  --sidebar-w: 64px;
+  --prop-w:   220px;
+}
+body {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  user-select: none;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────── */
+#sidebar {
+  width: var(--sidebar-w);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+  gap: 4px;
+  z-index: 10;
+}
+.logo {
+  font-size: 18px;
+  margin-bottom: 10px;
+  opacity: .6;
+}
+.tool-btn {
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, color .15s;
+  position: relative;
+}
+.tool-btn:hover { background: var(--border); color: var(--text); }
+.tool-btn.activo { background: var(--accent); color: #fff; }
+.tool-btn .tip {
+  position: absolute;
+  left: calc(100% + 8px);
+  background: #1e1e2e;
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  font-size: 11px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+  border: 1px solid var(--border);
+}
+.tool-btn:hover .tip { opacity: 1; }
+
+.sidebar-sep {
+  width: 32px; height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.btn-danger {
+  margin-top: auto;
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: #f87171;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+  position: relative;
+}
+.btn-danger:hover { background: rgba(248,113,113,.15); }
+.btn-danger .tip {
+  position: absolute;
+  left: calc(100% + 8px);
+  background: #1e1e2e;
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  font-size: 11px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+  border: 1px solid var(--border);
+}
+.btn-danger:hover .tip { opacity: 1; }
+
+/* ── Canvas area ─────────────────────────────────────────────── */
+#canvas-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  overflow: hidden;
+  position: relative;
+}
+#canvas-main {
+  background: #111118;
+  border: 1px solid var(--border);
+  box-shadow: 0 0 60px rgba(124,108,250,.08);
+  display: block;
+  cursor: crosshair;
+}
+/* canvas cursor por herramienta */
+#canvas-main.tool-select   { cursor: default; }
+#canvas-main.tool-draw     { cursor: crosshair; }
+#canvas-main.tool-eraser   { cursor: cell; }
+#canvas-main.tool-text     { cursor: text; }
+#canvas-main.tool-image    { cursor: copy; }
+
+/* ── Drop overlay ────────────────────────────────────────────── */
+#drop-overlay {
+  position: absolute; inset: 0;
+  background: rgba(124,108,250,.18);
+  border: 3px dashed var(--accent);
+  border-radius: 4px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--accent);
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* ── Properties panel ────────────────────────────────────────── */
+#props {
+  width: var(--prop-w);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+#props h2 {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.prop-group { display: flex; flex-direction: column; gap: 8px; }
+.prop-row   { display: flex; align-items: center; gap: 8px; }
+.prop-row label { color: var(--muted); font-size: 11px; white-space: nowrap; min-width: 52px; }
+
+input[type="color"] {
+  width: 32px; height: 32px;
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  background: none; padding: 0;
+  flex-shrink: 0;
+}
+input[type="range"] {
+  flex: 1; accent-color: var(--accent); height: 4px;
+}
+input[type="number"], input[type="text"] {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 5px 8px;
+  font-size: 12px;
+}
+input:focus { outline: none; border-color: var(--accent); }
+
+.prop-sep { height: 1px; background: var(--border); }
+
+.prop-btn {
+  width: 100%; padding: 7px;
+  border-radius: 7px; border: none;
+  background: var(--accent); color: #fff;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: background .15s;
+}
+.prop-btn:hover { background: #6a5ce8; }
+.prop-btn.sec {
+  background: var(--border); color: var(--text);
+}
+.prop-btn.sec:hover { background: #333345; }
+.prop-btn.danger { background: #ef4444; }
+.prop-btn.danger:hover { background: #dc2626; }
+
+/* upload input oculto */
+#file-input { display: none; }
+
+/* ── Toast ───────────────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  bottom: 18px; left: 50%;
+  transform: translateX(-50%) translateY(50px);
+  background: var(--accent);
+  color: #fff;
+  padding: 8px 20px;
+  border-radius: 99px;
+  font-weight: 600;
+  font-size: 12px;
+  transition: transform .25s;
+  pointer-events: none;
+  z-index: 999;
+}
+#toast.show { transform: translateX(-50%) translateY(0); }
+
+/* ── Status dot ──────────────────────────────────────────────── */
+#status {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #4ade80;
+  margin-top: auto;
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+#status.off { background: #f87171; }
+
+/* ── Text input flotante sobre canvas ───────────────────────── */
+#text-input-el {
+  position: absolute;
+  background: rgba(0,0,0,.75);
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 24px;
+  font-weight: 700;
+  padding: 6px 10px;
+  outline: none;
+  min-width: 160px;
+  display: none;
+  z-index: 50;
+  resize: none;
+  line-height: 1.3;
+  white-space: pre;
+  overflow: hidden;
+}
+
+/* ── Selection handles ───────────────────────────────────────── */
+.sel-box {
+  position: absolute;
+  border: 2px solid var(--accent);
+  pointer-events: none;
+  z-index: 40;
+}
+.sel-handle {
+  position: absolute;
+  width: 10px; height: 10px;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: all;
+  cursor: nwse-resize;
+  right: -5px; bottom: -5px;
+}
+</style>
+</head>
+<body>
+
+<!-- ════════ SIDEBAR ════════ -->
+<div id="sidebar">
+  <div class="logo">🎛️</div>
+
+  <button class="tool-btn activo" id="tool-select" onclick="setTool('select')" title="Seleccionar">
+    ↖️<span class="tip">Seleccionar / Mover</span>
+  </button>
+  <button class="tool-btn" id="tool-draw" onclick="setTool('draw')">
+    ✏️<span class="tip">Dibujar</span>
+  </button>
+  <button class="tool-btn" id="tool-eraser" onclick="setTool('eraser')">
+    🧹<span class="tip">Borrador</span>
+  </button>
+
+  <div class="sidebar-sep"></div>
+
+  <button class="tool-btn" id="tool-text" onclick="setTool('text')">
+    T<span class="tip">Texto</span>
+  </button>
+  <button class="tool-btn" id="tool-image" onclick="triggerUpload()">
+    🖼️<span class="tip">Imagen / GIF</span>
+  </button>
+
+  <div class="sidebar-sep"></div>
+
+  <button class="btn-danger" onclick="limpiarTodo()">
+    🗑️<span class="tip">Limpiar todo</span>
+  </button>
+  <div id="status" title="Conectado"></div>
+</div>
+
+<!-- ════════ CANVAS ════════ -->
+<div id="canvas-wrap">
+  <canvas id="canvas-main"></canvas>
+  <img
+  id="canvas-overlay"
+  src="canva-guide.png"
+  style="
+    position:absolute;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    pointer-events:none;
+    opacity:0.50;
+    object-fit:fill;
+    z-index:5;
+  ">
+  <textarea id="text-input-el" rows="1"></textarea>
+  <div id="drop-overlay">Suelta la imagen aquí 🖼️</div>
+</div>
+
+<!-- ════════ PROPS PANEL ════════ -->
+<div id="props">
+
+  <!-- Draw props -->
+  <div id="props-draw" class="prop-group">
+    <h2>Pincel</h2>
+    <div class="prop-row">
+      <label>Color</label>
+      <input type="color" id="draw-color" value="#ff4fd8">
+    </div>
+    <div class="prop-row">
+      <label>Grosor</label>
+      <input type="range" id="draw-size" min="2" max="60" value="8">
+      <span id="draw-size-val" style="min-width:24px;color:var(--muted)">8</span>
+    </div>
+    <button class="prop-btn sec" onclick="limpiarDibujo()">Limpiar trazos</button>
+  </div>
+
+  <div class="prop-sep"></div>
+
+  <!-- Text props -->
+  <div id="props-text" class="prop-group">
+    <h2>Texto</h2>
+    <div class="prop-row">
+      <label>Color</label>
+      <input type="color" id="text-color" value="#ffffff">
+    </div>
+    <div class="prop-row">
+      <label>Tamaño</label>
+      <input type="number" id="text-size" value="56" min="12" max="200" style="width:60px">
+    </div>
+  </div>
+
+  <div class="prop-sep"></div>
+
+  <!-- Selection props -->
+  <div id="props-select" class="prop-group" style="display:none">
+    <h2>Objeto seleccionado</h2>
+    <button class="prop-btn danger" onclick="eliminarSeleccionado()">Eliminar objeto</button>
+    <button class="prop-btn sec" onclick="deseleccionar()">Deseleccionar</button>
+  </div>
+
+</div>
+
+<input type="file" id="file-input" accept="image/*,.gif">
+<div id="toast"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════════════════════
+const OVERLAY_W = 1920, OVERLAY_H = 1080;
+
+const socket = io();
+const canvas  = document.getElementById('canvas-main');
+const ctx     = canvas.getContext('2d');
+const wrap    = document.getElementById('canvas-wrap');
+const textEl  = document.getElementById('text-input-el');
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ESTADO (declarado antes de cualquier llamada a funciones)
+// ═══════════════════════════════════════════════════════════════════════════
+let herramienta = 'select';
+let objetos = {};
+let selId = null;
+let pintando = false, lastX = 0, lastY = 0;
+let drawStrokes = [];
+let dragging = false, resizing = false;
+let dragOffX = 0, dragOffY = 0;
+let resizeStartX = 0, resizeStartY = 0, resizeStartW = 0, resizeStartH = 0, resizeStartOX = 0, resizeStartOY = 0;
+let textPos = null;
+let toastTimer;
+
+// ─── Escalar canvas para que quepa en la ventana ──────────────────────────
+const guide = document.getElementById('canvas-overlay');
+
+function fitCanvas() {
+  const maxW = wrap.clientWidth  - 32;
+  const maxH = wrap.clientHeight - 32;
+
+  const scale = Math.min(maxW / OVERLAY_W, maxH / OVERLAY_H);
+
+  canvas.width  = OVERLAY_W;
+  canvas.height = OVERLAY_H;
+
+  canvas.style.width  = (OVERLAY_W * scale) + 'px';
+  canvas.style.height = (OVERLAY_H * scale) + 'px';
+
+  guide.style.width  = canvas.style.width;
+  guide.style.height = canvas.style.height;
+
+  redraw();
+}
+window.addEventListener('resize', fitCanvas);
+fitCanvas();
+
+function canvasScale() {
+  return canvas.getBoundingClientRect().width / OVERLAY_W;
+}
+function toOverlay(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  const s = canvasScale();
+  return { x: (clientX - r.left) / s, y: (clientY - r.top) / s };
+}
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SOCKET
+// ═══════════════════════════════════════════════════════════════════════════
+socket.on('connect',    () => { document.getElementById('status').classList.remove('off'); });
+socket.on('disconnect', () => { document.getElementById('status').classList.add('off'); });
+
+// Recibir trazos propios de vuelta (porque el server hace io.emit)
+socket.on('trazo', (d) => { drawStrokes.push(d); redraw(); });
+socket.on('limpiar-dibujo', () => { drawStrokes = []; redraw(); });
+
+socket.on('obj-add', (d) => {
+  if (d.tipo === 'imagen') {
+    const img = new Image();
+    img.src = d.url;
+    img.onload = () => { d._img = img; objetos[d.id] = d; redraw(); };
+  } else {
+    objetos[d.id] = d;
+    redraw();
+  }
+});
+socket.on('obj-move', ({ id, x, y }) => {
+  if (objetos[id]) { objetos[id].x = x; objetos[id].y = y; redraw(); }
+});
+socket.on('obj-resize', ({ id, x, y, w, h }) => {
+  if (objetos[id]) { Object.assign(objetos[id], { x, y, w, h }); redraw(); }
+});
+socket.on('obj-remove', ({ id }) => {
+  delete objetos[id];
+  if (selId === id) selId = null;
+  redraw();
+});
+socket.on('limpiar-todo', () => {
+  drawStrokes = []; objetos = {}; selId = null; redraw();
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REDRAW (canvas de control)
+// ═══════════════════════════════════════════════════════════════════════════
+function redraw() {
+  ctx.clearRect(0, 0, OVERLAY_W, OVERLAY_H);
+
+  // Cuadrícula tenue
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < OVERLAY_W; x += 96) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,OVERLAY_H); ctx.stroke(); }
+  for (let y = 0; y < OVERLAY_H; y += 96) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(OVERLAY_W,y); ctx.stroke(); }
+
+  // Trazos libres
+  for (const d of drawStrokes) {
+    ctx.globalCompositeOperation = d.modo === 'borrar' ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = d.color;
+    ctx.lineWidth = d.grosor;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(d.x1, d.y1); ctx.lineTo(d.x2, d.y2); ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Objetos
+  for (const [id, obj] of Object.entries(objetos)) {
+    if (obj.tipo === 'imagen' && obj._img) {
+      ctx.drawImage(obj._img, obj.x, obj.y, obj.w, obj.h);
+    } else if (obj.tipo === 'texto') {
+      ctx.font = `900 ${obj.fontSize || 48}px 'Segoe UI', sans-serif`;
+      ctx.fillStyle = obj.color || '#fff';
+      // Sombra texto
+      ctx.shadowColor = 'rgba(0,0,0,0.9)';
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = '#000';
+      ctx.strokeText(obj.texto, obj.x, obj.y + (obj.fontSize || 48));
+      ctx.fillText(obj.texto, obj.x, obj.y + (obj.fontSize || 48));
+      ctx.shadowBlur = 0;
+    }
+
+    // Borde selección
+    if (id === selId) {
+      ctx.strokeStyle = '#7c6cfa';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 3]);
+      ctx.strokeRect(obj.x - 2, obj.y - 2, obj.w + 4, obj.h + 4);
+      ctx.setLineDash([]);
+      // Handle resize
+      ctx.fillStyle = '#7c6cfa';
+      ctx.fillRect(obj.x + obj.w - 6, obj.y + obj.h - 6, 12, 12);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HERRAMIENTAS
+// ═══════════════════════════════════════════════════════════════════════════
+function setTool(t) {
+  herramienta = t;
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('activo'));
+  const btn = document.getElementById('tool-' + t);
+  if (btn) btn.classList.add('activo');
+  canvas.className = 'tool-' + t;
+
+  // Mostrar/ocultar props
+  document.getElementById('props-draw').style.display   = (t === 'draw' || t === 'eraser') ? '' : 'none';
+  document.getElementById('props-text').style.display   = t === 'text' ? '' : 'none';
+  document.getElementById('props-select').style.display = (t === 'select' && selId) ? '' : 'none';
+
+  if (t !== 'select') deseleccionar();
+  cerrarTextInput();
+}
+setTool('select'); // init
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MOUSE EVENTS
+// ═══════════════════════════════════════════════════════════════════════════
+canvas.addEventListener('mousedown', onDown);
+canvas.addEventListener('mousemove', onMove);
+canvas.addEventListener('mouseup',   onUp);
+canvas.addEventListener('mouseleave', onUp);
+
+function onDown(e) {
+  const pos = toOverlay(e.clientX, e.clientY);
+
+  if (herramienta === 'draw' || herramienta === 'eraser') {
+    pintando = true; lastX = pos.x; lastY = pos.y;
+    return;
+  }
+
+  if (herramienta === 'select') {
+    // ¿Clic en handle de resize?
+    if (selId && objetos[selId]) {
+      const obj = objetos[selId];
+      if (pos.x >= obj.x + obj.w - 10 && pos.x <= obj.x + obj.w + 10 &&
+          pos.y >= obj.y + obj.h - 10 && pos.y <= obj.y + obj.h + 10) {
+        resizing = true;
+        resizeStartX = pos.x; resizeStartY = pos.y;
+        resizeStartW = obj.w; resizeStartH = obj.h;
+        resizeStartOX = obj.x; resizeStartOY = obj.y;
+        return;
+      }
+    }
+    // ¿Clic en objeto?
+    const hit = hitTest(pos.x, pos.y);
+    if (hit) {
+      selId = hit;
+      dragging = true;
+      dragOffX = pos.x - objetos[hit].x;
+      dragOffY = pos.y - objetos[hit].y;
+      document.getElementById('props-select').style.display = '';
+    } else {
+      deseleccionar();
+    }
+    redraw();
+    return;
+  }
+
+  if (herramienta === 'text') {
+    abrirTextInput(pos.x, pos.y, e.clientX, e.clientY);
+    return;
+  }
+}
+
+function onMove(e) {
+  const pos = toOverlay(e.clientX, e.clientY);
+
+  if (pintando) {
+    const color  = herramienta === 'eraser' ? '#000' : document.getElementById('draw-color').value;
+    const grosor = parseInt(document.getElementById('draw-size').value);
+    const modo   = herramienta === 'eraser' ? 'borrar' : 'pintar';
+    socket.emit('trazo', { x1: lastX, y1: lastY, x2: pos.x, y2: pos.y, color, grosor, modo });
+    lastX = pos.x; lastY = pos.y;
+    return;
+  }
+
+  if (dragging && selId && objetos[selId]) {
+    const nx = pos.x - dragOffX, ny = pos.y - dragOffY;
+    objetos[selId].x = nx; objetos[selId].y = ny;
+    socket.emit('obj-move', { id: selId, x: nx, y: ny });
+    redraw();
+    return;
+  }
+
+  if (resizing && selId && objetos[selId]) {
+    const dx = pos.x - resizeStartX, dy = pos.y - resizeStartY;
+    const nw = Math.max(40, resizeStartW + dx);
+    const nh = Math.max(40, resizeStartH + dy);
+    objetos[selId].w = nw; objetos[selId].h = nh;
+    socket.emit('obj-resize', { id: selId, x: resizeStartOX, y: resizeStartOY, w: nw, h: nh });
+    redraw();
+    return;
+  }
+}
+
+function onUp() {
+  pintando = false; dragging = false; resizing = false;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HIT TEST
+// ═══════════════════════════════════════════════════════════════════════════
+function hitTest(x, y) {
+  // Último objeto encima primero
+  const ids = Object.keys(objetos).reverse();
+  for (const id of ids) {
+    const o = objetos[id];
+    if (x >= o.x && x <= o.x + o.w && y >= o.y && y <= o.y + o.h) return id;
+  }
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEXTO INLINE
+// ═══════════════════════════════════════════════════════════════════════════
+function abrirTextInput(ox, oy, cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  const s = canvasScale();
+  textPos = { x: ox, y: oy };
+  textEl.style.display = 'block';
+  textEl.style.left = (cx - r.left) + 'px';
+  textEl.style.top  = (cy - r.top)  + 'px';
+  textEl.style.fontSize = (parseInt(document.getElementById('text-size').value) * s) + 'px';
+  textEl.style.color = document.getElementById('text-color').value;
+  textEl.value = '';
+  textEl.focus();
+}
+
+function cerrarTextInput() {
+  textEl.style.display = 'none';
+  textEl.value = '';
+  textPos = null;
+}
+
+textEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { cerrarTextInput(); return; }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    const texto = textEl.value.trim();
+    if (texto && textPos) {
+      const fontSize = parseInt(document.getElementById('text-size').value);
+      const color    = document.getElementById('text-color').value;
+      const id = 'txt_' + Date.now();
+      const w  = Math.max(200, texto.length * fontSize * 0.6);
+      const h  = fontSize * 1.5;
+      socket.emit('obj-add', { id, tipo: 'texto', texto, x: textPos.x, y: textPos.y, w, h, color, fontSize });
+      toast('💬 Texto agregado');
+    }
+    cerrarTextInput();
+  }
+});
+
+// Auto-resize textarea
+textEl.addEventListener('input', () => {
+  textEl.style.height = 'auto';
+  textEl.style.height = textEl.scrollHeight + 'px';
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// IMÁGENES — upload + drag & drop
+// ═══════════════════════════════════════════════════════════════════════════
+document.getElementById('file-input').addEventListener('change', function() {
+  if (this.files[0]) subirImagen(this.files[0]);
+});
+
+function triggerUpload() {
+  document.getElementById('file-input').click();
+}
+
+async function subirImagen(file) {
+  const form = new FormData();
+  form.append('imagen', file);
+  const res  = await fetch('/upload', { method: 'POST', body: form });
+  const data = await res.json();
+  if (!data.ok) return;
+
+  const id  = 'img_' + Date.now();
+  const url = data.url;
+  // Tamaño por defecto razonable en el overlay
+  socket.emit('obj-add', { id, tipo: 'imagen', url, x: 200, y: 200, w: 400, h: 300 });
+  toast('🖼️ Imagen enviada');
+}
+
+// Drag & drop en canvas-wrap
+const dropZone = document.getElementById('canvas-wrap');
+const dropOverlay = document.getElementById('drop-overlay');
+
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropOverlay.style.display = 'flex';
+});
+dropZone.addEventListener('dragleave', () => {
+  dropOverlay.style.display = 'none';
+});
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropOverlay.style.display = 'none';
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) subirImagen(file);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SELECCIÓN / ELIMINACIÓN
+// ═══════════════════════════════════════════════════════════════════════════
+function deseleccionar() {
+  selId = null;
+  document.getElementById('props-select').style.display = 'none';
+  redraw();
+}
+
+function eliminarSeleccionado() {
+  if (!selId) return;
+  socket.emit('obj-remove', { id: selId });
+  toast('🗑️ Objeto eliminado');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LIMPIAR
+// ═══════════════════════════════════════════════════════════════════════════
+function limpiarDibujo() {
+  socket.emit('limpiar-dibujo');
+  toast('🧹 Trazos limpiados');
+}
+function limpiarTodo() {
+  if (!confirm('¿Limpiar TODO el overlay?')) return;
+  socket.emit('limpiar-todo');
+  toast('🧨 Overlay limpiado');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SLIDERS UI
+// ═══════════════════════════════════════════════════════════════════════════
+document.getElementById('draw-size').addEventListener('input', function() {
+  document.getElementById('draw-size-val').textContent = this.value;
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════════════════════
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// Init props visibility
+setTool('select');
+</script>
+</body>
+</html>

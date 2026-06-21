@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Overlay</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1920px; height: 1080px;
+    overflow: hidden;
+    background: transparent;
+    font-family: 'Segoe UI', sans-serif;
+  }
+  #canvas-dibujo {
+    position: absolute; top: 0; left: 0;
+    width: 1920px; height: 1080px;
+    pointer-events: none; z-index: 10;
+  }
+  .obj-imagen {
+    position: absolute;
+    z-index: 5;
+    pointer-events: none;
+    animation: popIn 0.25s ease;
+    filter: drop-shadow(0 4px 16px rgba(0,0,0,0.6));
+    transform-origin: top left;
+  }
+  .obj-imagen img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .obj-texto {
+    position: absolute;
+    font-weight: 900;
+    color: white;
+    text-shadow: -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000;
+    z-index: 15;
+    pointer-events: none;
+    animation: popIn 0.25s ease;
+    white-space: pre-wrap;
+    line-height: 1.2;
+    transform-origin: top left;
+  }
+  @keyframes popIn {
+    from { transform: scale(0.7); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas-dibujo"></canvas>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+const canvas = document.getElementById('canvas-dibujo');
+const ctx = canvas.getContext('2d');
+canvas.width = 1920;
+canvas.height = 1080;
+
+// ── Dibujo ───────────────────────────────────────────────────────────────────
+socket.on('trazo', ({ x1, y1, x2, y2, color, grosor, modo }) => {
+  ctx.globalCompositeOperation = modo === 'borrar' ? 'destination-out' : 'source-over';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = grosor;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.globalCompositeOperation = 'source-over';
+});
+socket.on('limpiar-dibujo', () => ctx.clearRect(0, 0, 1920, 1080));
+
+// ── Objetos (imágenes y textos posicionados) ─────────────────────────────────
+const objetos = {};
+
+socket.on('obj-add', ({ id, tipo, url, texto, x, y, w, h, color, fontSize }) => {
+  const el = document.createElement('div');
+  el.id = id;
+  el.style.position = 'absolute';
+  el.style.left = x + 'px';
+  el.style.top  = y + 'px';
+
+  if (tipo === 'imagen') {
+    el.className = 'obj-imagen';
+    el.style.width  = w + 'px';
+    el.style.height = h + 'px';
+    const img = document.createElement('img');
+    img.src = url;
+    el.appendChild(img);
+  } else if (tipo === 'texto') {
+    el.className = 'obj-texto';
+    el.textContent = texto;
+    el.style.color    = color || '#ffffff';
+    el.style.fontSize = (fontSize || 48) + 'px';
+  }
+
+  document.body.appendChild(el);
+  objetos[id] = el;
+});
+
+socket.on('obj-move', ({ id, x, y }) => {
+  const el = objetos[id];
+  if (!el) return;
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+});
+
+socket.on('obj-resize', ({ id, x, y, w, h }) => {
+  const el = objetos[id];
+  if (!el) return;
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+  el.style.width = w + 'px'; el.style.height = h + 'px';
+});
+
+socket.on('obj-remove', ({ id }) => {
+  const el = objetos[id];
+  if (el) { el.remove(); delete objetos[id]; }
+});
+
+socket.on('limpiar-todo', () => {
+  ctx.clearRect(0, 0, 1920, 1080);
+  document.querySelectorAll('.obj-imagen, .obj-texto').forEach(el => el.remove());
+  Object.keys(objetos).forEach(k => delete objetos[k]);
+});
+</script>
+</body>
+</html>
