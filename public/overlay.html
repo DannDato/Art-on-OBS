@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Overlay</title>
+<title>Overlay Transparent</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -14,37 +14,14 @@
   #canvas-dibujo {
     position: absolute; top: 0; left: 0;
     width: 1920px; height: 1080px;
-    pointer-events: none; z-index: 10;
-  }
-  .obj-imagen {
-    position: absolute;
-    z-index: 5;
     pointer-events: none;
-    animation: popIn 0.25s ease;
-    filter: drop-shadow(0 4px 16px rgba(0,0,0,0.6));
-    transform-origin: top left;
-  }
-  .obj-imagen img { width: 100%; height: 100%; object-fit: contain; display: block; }
-  .obj-texto {
-    position: absolute;
-    font-weight: 900;
-    color: white;
-    text-shadow: -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000;
-    z-index: 15;
-    pointer-events: none;
-    animation: popIn 0.25s ease;
-    white-space: pre-wrap;
-    line-height: 1.2;
-    transform-origin: top left;
-  }
-  @keyframes popIn {
-    from { transform: scale(0.7); opacity: 0; }
-    to   { transform: scale(1);   opacity: 1; }
   }
 </style>
 </head>
 <body>
+
 <canvas id="canvas-dibujo"></canvas>
+
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
@@ -53,67 +30,134 @@ const ctx = canvas.getContext('2d');
 canvas.width = 1920;
 canvas.height = 1080;
 
-// ── Dibujo ───────────────────────────────────────────────────────────────────
-socket.on('trazo', ({ x1, y1, x2, y2, color, grosor, modo }) => {
-  ctx.globalCompositeOperation = modo === 'borrar' ? 'destination-out' : 'source-over';
-  ctx.strokeStyle = color;
-  ctx.lineWidth = grosor;
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-  ctx.globalCompositeOperation = 'source-over';
-});
-socket.on('limpiar-dibujo', () => ctx.clearRect(0, 0, 1920, 1080));
+// Base de datos local de objetos en pantalla
+let objetos = {};
 
-// ── Objetos (imágenes y textos posicionados) ─────────────────────────────────
-const objetos = {};
-
-socket.on('obj-add', ({ id, tipo, url, texto, x, y, w, h, color, fontSize }) => {
-  const el = document.createElement('div');
-  el.id = id;
-  el.style.position = 'absolute';
-  el.style.left = x + 'px';
-  el.style.top  = y + 'px';
-
-  if (tipo === 'imagen') {
-    el.className = 'obj-imagen';
-    el.style.width  = w + 'px';
-    el.style.height = h + 'px';
-    const img = document.createElement('img');
-    img.src = url;
-    el.appendChild(img);
-  } else if (tipo === 'texto') {
-    el.className = 'obj-texto';
-    el.textContent = texto;
-    el.style.color    = color || '#ffffff';
-    el.style.fontSize = (fontSize || 48) + 'px';
-  }
-
-  document.body.appendChild(el);
-  objetos[id] = el;
-});
-
-socket.on('obj-move', ({ id, x, y }) => {
-  const el = objetos[id];
-  if (!el) return;
-  el.style.left = x + 'px'; el.style.top = y + 'px';
-});
-
-socket.on('obj-resize', ({ id, x, y, w, h }) => {
-  const el = objetos[id];
-  if (!el) return;
-  el.style.left = x + 'px'; el.style.top = y + 'px';
-  el.style.width = w + 'px'; el.style.height = h + 'px';
-});
-
-socket.on('obj-remove', ({ id }) => {
-  const el = objetos[id];
-  if (el) { el.remove(); delete objetos[id]; }
-});
-
-socket.on('limpiar-todo', () => {
+// ═══════════════════════════════════════════════════════════════════════════
+// MOTOR DE REDRAW (Dibuja todo con curvas y capas en OBS)
+// ═══════════════════════════════════════════════════════════════════════════
+function redraw() {
   ctx.clearRect(0, 0, 1920, 1080);
-  document.querySelectorAll('.obj-imagen, .obj-texto').forEach(el => el.remove());
-  Object.keys(objetos).forEach(k => delete objetos[k]);
+
+  for (const [id, obj] of Object.entries(objetos)) {
+
+    // 1. DIBUJAR IMÁGENES
+    if (obj.tipo === 'imagen' && obj._img) {
+      ctx.drawImage(obj._img, obj.x, obj.y, obj.w, obj.h);
+    }
+
+    // 2. DIBUJAR TEXTOS STAMPED
+    else if (obj.tipo === 'texto') {
+      ctx.font = `900 ${obj.fontSize || 48}px 'Segoe UI', sans-serif`;
+      ctx.fillStyle = obj.color || '#fff';
+      ctx.shadowColor = 'rgba(0,0,0,0.9)';
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = '#000';
+      ctx.strokeText(obj.texto, obj.x, obj.y + (obj.fontSize || 48));
+      ctx.fillText(obj.texto, obj.x, obj.y + (obj.fontSize || 48));
+    }
+
+    // 3. DIBUJAR TRAZOS VECTORIALES COMPLETA Y SUAVIZADOS
+    else if (obj.tipo === 'trazo' && obj.lineas && obj.lineas.length > 0) {
+      ctx.save();
+      ctx.translate(obj.x, obj.y);
+
+      let origW = obj.lineas.reduce((max, l) => Math.max(max, l.x1, l.x2), 10);
+      let origH = obj.lineas.reduce((max, l) => Math.max(max, l.y1, l.y2), 10);
+      ctx.scale(obj.w / origW, obj.h / origH);
+
+      const primerTrazo = obj.lineas[0];
+      ctx.globalCompositeOperation = primerTrazo.modo === 'borrar' ? 'destination-out' : 'source-over';
+      ctx.strokeStyle = primerTrazo.color;
+      ctx.lineWidth = primerTrazo.grosor;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+      ctx.beginPath();
+      ctx.moveTo(primerTrazo.x1, primerTrazo.y1);
+
+      for (let i = 0; i < obj.lineas.length - 1; i++) {
+        const curr = obj.lineas[i];
+        const next = obj.lineas[i + 1];
+        const midX = (curr.x2 + next.x1) / 2;
+        const midY = (curr.y2 + next.y1) / 2;
+        ctx.quadraticCurveTo(curr.x2, curr.y2, midX, midY);
+      }
+
+      const ultimo = obj.lineas[obj.lineas.length - 1];
+      ctx.lineTo(ultimo.x2, ultimo.y2);
+      ctx.stroke();
+
+      ctx.restore();
+      ctx.globalCompositeOperation = 'source-over';
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LISTENERS DE SOCKETS (Sincronización remota)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// A. TRAZO EN VIVO (Muestreo rápido milisegundo a milisegundo mientras arrastras)
+socket.on('trazo-en-vivo', (d) => {
+  ctx.save();
+  ctx.globalCompositeOperation = d.modo === 'borrar' ? 'destination-out' : 'source-over';
+  ctx.strokeStyle = d.color;
+  ctx.lineWidth = d.grosor;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+  ctx.beginPath();
+  ctx.moveTo(d.x1, d.y1);
+  const midX = (d.x1 + d.x2) / 2;
+  const midY = (d.y1 + d.y2) / 2;
+  ctx.quadraticCurveTo(d.x1, d.y1, midX, midY);
+  ctx.stroke();
+  ctx.restore();
+});
+
+// B. AGREGAR OBJETOS (Al soltar el trazo, estampar textos o cargar imágenes)
+socket.on('obj-add', (d) => {
+  if (d.tipo === 'imagen') {
+    const img = new Image();
+    img.src = d.url;
+    img.onload = () => {
+      d._img = img;
+      objetos[d.id] = d;
+      redraw();
+    };
+  } else {
+    objetos[d.id] = d;
+    redraw();
+  }
+});
+
+// C. MOVIMIENTOS EN VIVO
+socket.on('obj-move', ({ id, x, y }) => {
+  if (objetos[id]) {
+    objetos[id].x = x;
+    objetos[id].y = y;
+    redraw();
+  }
+});
+
+// D. REDIMENSIONADOS EN VIVO
+socket.on('obj-resize', ({ id, x, y, w, h }) => {
+  if (objetos[id]) {
+    Object.assign(objetos[id], { x, y, w, h });
+    redraw();
+  }
+});
+
+// E. BORRAR OBJETOS INDIVIDUALES O GRUPOS
+socket.on('obj-remove', ({ id }) => {
+  delete objetos[id];
+  redraw();
+});
+
+// F. BOTÓN DE PÁNICO (Limpiar todo)
+socket.on('limpiar-todo', () => {
+  objetos = {};
+  ctx.clearRect(0, 0, 1920, 1080);
 });
 </script>
 </body>

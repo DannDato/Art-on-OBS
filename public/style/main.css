@@ -1,0 +1,313 @@
+/* ── Reset & base ─────────────────────────────────────────────── */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --bg:       #161616;
+  --surface:  #1a1a1a;
+  --border:   #2c2c2c;
+  --accent:   #ffa755;
+  --accent2:  #fa6c9f;
+  --text:     #e2e2f0;
+  --muted:    #6b6b8a;
+  --sidebar-w: 64px;
+  --prop-w:   220px;
+}
+body {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  user-select: none;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────── */
+#sidebar {
+  width: var(--sidebar-w);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+  gap: 4px;
+  z-index: 10;
+}
+.logo {
+  font-size: 18px;
+  margin-bottom: 10px;
+  opacity: .6;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   BOTONES DE HERRAMIENTAS Y DE GUÍAS (Unificados)
+   ═════════════════════════════════════════════════════════════════════════ */
+.tool-btn, .guide-btn {
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, color .15s;
+  position: relative;
+}
+
+.tool-btn:hover, .guide-btn:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.tool-btn.activo, .guide-btn.activo {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Soporte de Tooltips para ambos tipos de botón */
+.tool-btn .tip, .guide-btn .tip {
+  position: absolute;
+  left: calc(100% + 8px);
+  background: #1e1e2e;
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  font-size: 11px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+  border: 1px solid var(--border);
+  z-index: 20;
+}
+
+.tool-btn:hover .tip, .guide-btn:hover .tip {
+  opacity: 1;
+}
+
+.sidebar-sep {
+  width: 32px; height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.btn-danger {
+  margin-top: auto;
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: #f87171;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+  position: relative;
+}
+.btn-danger:hover { background: rgba(248,113,113,.15); }
+.btn-danger .tip {
+  position: absolute;
+  left: calc(100% + 8px);
+  background: #1e1e2e;
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  font-size: 11px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+  border: 1px solid var(--border);
+}
+.btn-danger:hover .tip { opacity: 1; }
+
+/* ── Canvas area ─────────────────────────────────────────────── */
+#canvas-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  overflow: hidden;
+  position: relative;
+}
+#canvas-main {
+  background: #141414;
+  border: 1px solid var(--border);
+  display: block;
+  cursor: crosshair;
+}
+/* canvas cursor por herramienta */
+#canvas-main.tool-select   { cursor: default; }
+#canvas-main.tool-draw     { cursor: crosshair; }
+#canvas-main.tool-eraser   { cursor: cell; }
+#canvas-main.tool-text     { cursor: text; }
+#canvas-main.tool-image    { cursor: copy; }
+
+/* ── Drop overlay ────────────────────────────────────────────── */
+#drop-overlay {
+  position: absolute; inset: 0;
+  background: rgba(124,108,250,.18);
+  border: 3px dashed var(--accent);
+  border-radius: 4px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--accent);
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* ── Properties panel ────────────────────────────────────────── */
+#props {
+  width: var(--prop-w);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+#props h2 {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.prop-group { display: flex; flex-direction: column; gap: 8px; }
+.prop-row   { display: flex; align-items: center; gap: 8px; }
+.prop-row label { color: var(--muted); font-size: 11px; white-space: nowrap; min-width: 52px; }
+
+input[type="color"] {
+  width: 32px; height: 32px;
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  background: none; padding: 0;
+  flex-shrink: 0;
+}
+input[type="range"] {
+  flex: 1; accent-color: var(--accent); height: 4px;
+}
+input[type="number"], input[type="text"] {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 5px 8px;
+  font-size: 12px;
+}
+input:focus { outline: none; border-color: var(--accent); }
+
+.prop-sep { height: 1px; background: var(--border); }
+
+.prop-btn {
+  width: 100%; padding: 7px;
+  border-radius: 7px; border: none;
+  background: var(--accent); color: #fff;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: background .15s;
+}
+.prop-btn:hover { background: #6a5ce8; }
+.prop-btn.sec {
+  background: var(--border); color: var(--text);
+}
+.prop-btn.sec:hover { background: #333345; }
+.prop-btn.danger { background: #ef4444; }
+.prop-btn.danger:hover { background: #dc2626; }
+
+/* upload input oculto */
+#file-input { display: none; }
+
+/* ── Toast ───────────────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  bottom: 18px; left: 50%;
+  transform: translateX(-50%) translateY(50px);
+  background: var(--accent);
+  color: #fff;
+  padding: 8px 20px;
+  border-radius: 99px;
+  font-weight: 600;
+  font-size: 12px;
+  transition: transform .25s;
+  pointer-events: none;
+  z-index: 999;
+}
+#toast.show { transform: translateX(-50%) translateY(0); }
+
+/* ── Status dot ──────────────────────────────────────────────── */
+#status {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #4ade80;
+  margin-top: auto;
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+#status.off { background: #f87171; }
+
+/* ── Text input flotante sobre canvas ───────────────────────── */
+#text-input-el {
+  position: absolute;
+  background: rgba(0,0,0,.75);
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 24px;
+  font-weight: 700;
+  padding: 6px 10px;
+  outline: none;
+  min-width: 160px;
+  display: none;
+  z-index: 50;
+  resize: none;
+  line-height: 1.3;
+  white-space: pre;
+  overflow: hidden;
+}
+
+/* ── Selection handles ───────────────────────────────────────── */
+.sel-box {
+  position: absolute;
+  border: 2px solid var(--accent);
+  pointer-events: none;
+  z-index: 40;
+}
+.sel-handle {
+  position: absolute;
+  width: 10px; height: 10px;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: all;
+  cursor: nwse-resize;
+  right: -5px; bottom: -5px;
+}
+
+/* Asegurar que las líneas temporales se dibujen suavizadas */
+#canvas-main {
+    line-cap: round;
+    line-join: round;
+}
+#text-input-el {
+  background: transparent;
+  border: 1px dashed rgba(255,255,255,0.3);
+  outline: none;
+  resize: none;
+  overflow: hidden;
+}
+
+.tool-btn, .guide-btn {
+  /* Aquí van tus estilos actuales para los botones (background, border, padding, etc.) */
+}
+
+.tool-btn.activo, .guide-btn.activo {
+  /* Aquí van tus estilos actuales para el botón iluminado/activo */
+}

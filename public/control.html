@@ -1,315 +1,95 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+<script src="https://unpkg.com/lucide@latest"></script>
 <meta charset="UTF-8">
 <title>Overlay Control</title>
-<style>
-/* ── Reset & base ─────────────────────────────────────────────── */
-*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-:root {
-  --bg:       #0e0e12;
-  --surface:  #18181f;
-  --border:   #2a2a38;
-  --accent:   #7c6cfa;
-  --accent2:  #fa6c9f;
-  --text:     #e2e2f0;
-  --muted:    #6b6b8a;
-  --sidebar-w: 64px;
-  --prop-w:   220px;
-}
-body {
-  display: flex;
-  height: 100vh;
-  overflow: hidden;
-  background: var(--bg);
-  color: var(--text);
-  font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 13px;
-  user-select: none;
-}
-
-/* ── Sidebar ──────────────────────────────────────────────────── */
-#sidebar {
-  width: var(--sidebar-w);
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 10px 0;
-  gap: 4px;
-  z-index: 10;
-}
-.logo {
-  font-size: 18px;
-  margin-bottom: 10px;
-  opacity: .6;
-}
-.tool-btn {
-  width: 44px; height: 44px;
-  border-radius: 10px;
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  font-size: 20px;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background .15s, color .15s;
-  position: relative;
-}
-.tool-btn:hover { background: var(--border); color: var(--text); }
-.tool-btn.activo { background: var(--accent); color: #fff; }
-.tool-btn .tip {
-  position: absolute;
-  left: calc(100% + 8px);
-  background: #1e1e2e;
-  color: var(--text);
-  padding: 4px 8px;
-  border-radius: 6px;
-  white-space: nowrap;
-  font-size: 11px;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity .15s;
-  border: 1px solid var(--border);
-}
-.tool-btn:hover .tip { opacity: 1; }
-
-.sidebar-sep {
-  width: 32px; height: 1px;
-  background: var(--border);
-  margin: 4px 0;
-}
-
-.btn-danger {
-  margin-top: auto;
-  width: 44px; height: 44px;
-  border-radius: 10px;
-  border: none;
-  background: transparent;
-  color: #f87171;
-  font-size: 20px;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background .15s;
-  position: relative;
-}
-.btn-danger:hover { background: rgba(248,113,113,.15); }
-.btn-danger .tip {
-  position: absolute;
-  left: calc(100% + 8px);
-  background: #1e1e2e;
-  color: var(--text);
-  padding: 4px 8px;
-  border-radius: 6px;
-  white-space: nowrap;
-  font-size: 11px;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity .15s;
-  border: 1px solid var(--border);
-}
-.btn-danger:hover .tip { opacity: 1; }
-
-/* ── Canvas area ─────────────────────────────────────────────── */
-#canvas-wrap {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg);
-  overflow: hidden;
-  position: relative;
-}
-#canvas-main {
-  background: #111118;
-  border: 1px solid var(--border);
-  box-shadow: 0 0 60px rgba(124,108,250,.08);
-  display: block;
-  cursor: crosshair;
-}
-/* canvas cursor por herramienta */
-#canvas-main.tool-select   { cursor: default; }
-#canvas-main.tool-draw     { cursor: crosshair; }
-#canvas-main.tool-eraser   { cursor: cell; }
-#canvas-main.tool-text     { cursor: text; }
-#canvas-main.tool-image    { cursor: copy; }
-
-/* ── Drop overlay ────────────────────────────────────────────── */
-#drop-overlay {
-  position: absolute; inset: 0;
-  background: rgba(124,108,250,.18);
-  border: 3px dashed var(--accent);
-  border-radius: 4px;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: var(--accent);
-  pointer-events: none;
-  z-index: 100;
-}
-
-/* ── Properties panel ────────────────────────────────────────── */
-#props {
-  width: var(--prop-w);
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-  padding: 14px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  overflow-y: auto;
-}
-#props h2 {
-  font-size: 10px;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 2px;
-}
-.prop-group { display: flex; flex-direction: column; gap: 8px; }
-.prop-row   { display: flex; align-items: center; gap: 8px; }
-.prop-row label { color: var(--muted); font-size: 11px; white-space: nowrap; min-width: 52px; }
-
-input[type="color"] {
-  width: 32px; height: 32px;
-  border: 2px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-  background: none; padding: 0;
-  flex-shrink: 0;
-}
-input[type="range"] {
-  flex: 1; accent-color: var(--accent); height: 4px;
-}
-input[type="number"], input[type="text"] {
-  flex: 1;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  padding: 5px 8px;
-  font-size: 12px;
-}
-input:focus { outline: none; border-color: var(--accent); }
-
-.prop-sep { height: 1px; background: var(--border); }
-
-.prop-btn {
-  width: 100%; padding: 7px;
-  border-radius: 7px; border: none;
-  background: var(--accent); color: #fff;
-  font-size: 12px; font-weight: 600;
-  cursor: pointer; transition: background .15s;
-}
-.prop-btn:hover { background: #6a5ce8; }
-.prop-btn.sec {
-  background: var(--border); color: var(--text);
-}
-.prop-btn.sec:hover { background: #333345; }
-.prop-btn.danger { background: #ef4444; }
-.prop-btn.danger:hover { background: #dc2626; }
-
-/* upload input oculto */
-#file-input { display: none; }
-
-/* ── Toast ───────────────────────────────────────────────────── */
-#toast {
-  position: fixed;
-  bottom: 18px; left: 50%;
-  transform: translateX(-50%) translateY(50px);
-  background: var(--accent);
-  color: #fff;
-  padding: 8px 20px;
-  border-radius: 99px;
-  font-weight: 600;
-  font-size: 12px;
-  transition: transform .25s;
-  pointer-events: none;
-  z-index: 999;
-}
-#toast.show { transform: translateX(-50%) translateY(0); }
-
-/* ── Status dot ──────────────────────────────────────────────── */
-#status {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: #4ade80;
-  margin-top: auto;
-  margin-bottom: 6px;
-  flex-shrink: 0;
-}
-#status.off { background: #f87171; }
-
-/* ── Text input flotante sobre canvas ───────────────────────── */
-#text-input-el {
-  position: absolute;
-  background: rgba(0,0,0,.75);
-  border: 2px solid var(--accent);
-  border-radius: 6px;
-  color: #fff;
-  font-size: 24px;
-  font-weight: 700;
-  padding: 6px 10px;
-  outline: none;
-  min-width: 160px;
-  display: none;
-  z-index: 50;
-  resize: none;
-  line-height: 1.3;
-  white-space: pre;
-  overflow: hidden;
-}
-
-/* ── Selection handles ───────────────────────────────────────── */
-.sel-box {
-  position: absolute;
-  border: 2px solid var(--accent);
-  pointer-events: none;
-  z-index: 40;
-}
-.sel-handle {
-  position: absolute;
-  width: 10px; height: 10px;
-  background: var(--accent);
-  border-radius: 2px;
-  pointer-events: all;
-  cursor: nwse-resize;
-  right: -5px; bottom: -5px;
-}
-</style>
+<link rel="stylesheet" href="style/main.css">
 </head>
 <body>
 
 <!-- ════════ SIDEBAR ════════ -->
 <div id="sidebar">
-  <div class="logo">🎛️</div>
+  <div class="logo">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+      <path d="M3 13h8v8H3zm0-10h8v8H3zm10 0h8v8h-8zm0 10h8v8h-8z"/>
+    </svg>
+  </div>
+  <div class="sidebar-sep"></div>
 
+  <!-- SELECCIONAR -->
   <button class="tool-btn activo" id="tool-select" onclick="setTool('select')" title="Seleccionar">
-    ↖️<span class="tip">Seleccionar / Mover</span>
+    <svg class="w-6 h-6 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+      <path fill-rule="evenodd" d="M13.729 5.575c1.304-1.074 3.27-.146 3.27 1.544v9.762c0 1.69-1.966 2.618-3.27 1.544l-5.927-4.881a2 2 0 0 1 0-3.088l5.927-4.88Z" clip-rule="evenodd"/>
+    </svg>
+    <span class="tip">Seleccionar / Mover</span>
   </button>
+  <!-- DIBUJAR -->
   <button class="tool-btn" id="tool-draw" onclick="setTool('draw')">
-    ✏️<span class="tip">Dibujar</span>
+    <svg class="w-6 h-6 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+      <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.779 17.779 4.36 19.918 6.5 13.5m4.279 4.279 8.364-8.643a3.027 3.027 0 0 0-2.14-5.165 3.03 3.03 0 0 0-2.14.886L6.5 13.5m4.279 4.279L6.499 13.5m2.14 2.14 6.213-6.504M12.75 7.04 17 11.28"/>
+    </svg>
+  <span class="tip">Dibujar</span>
   </button>
+  <!-- BORRADOR -->
   <button class="tool-btn" id="tool-eraser" onclick="setTool('eraser')">
-    🧹<span class="tip">Borrador</span>
+    <svg class="w-6 h-6 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+      <path fill-rule="evenodd" d="M2 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10S2 17.523 2 12Zm5.757-1a1 1 0 1 0 0 2h8.486a1 1 0 1 0 0-2H7.757Z" clip-rule="evenodd"/>
+    </svg>
+    <span class="tip">Borrador</span>
   </button>
 
-  <div class="sidebar-sep"></div>
-
+  <!-- TEXTO -->
   <button class="tool-btn" id="tool-text" onclick="setTool('text')">
-    T<span class="tip">Texto</span>
+    <svg class="w-6 h-6 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+      <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8.874 19 6.143-14M6 19h6.33m-.66-14H18"/>
+    </svg>
+    <span class="tip">Texto</span>
   </button>
+  <!-- IMAGEN / GIF -->
   <button class="tool-btn" id="tool-image" onclick="triggerUpload()">
-    🖼️<span class="tip">Imagen / GIF</span>
+    <svg class="w-6 h-6 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+      <path fill-rule="evenodd" d="M13 10a1 1 0 0 1 1-1h.01a1 1 0 1 1 0 2H14a1 1 0 0 1-1-1Z" clip-rule="evenodd"/>
+      <path fill-rule="evenodd" d="M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12c0 .556-.227 1.06-.593 1.422A.999.999 0 0 1 20.5 20H4a2.002 2.002 0 0 1-2-2V6Zm6.892 12 3.833-5.356-3.99-4.322a1 1 0 0 0-1.549.097L4 12.879V6h16v9.95l-3.257-3.619a1 1 0 0 0-1.557.088L11.2 18H8.892Z" clip-rule="evenodd"/>
+    </svg>
+    <span class="tip">Imagen / GIF</span>
+  </button>
+
+  <!-- SEPARADOR -->
+  <div class="sidebar-sep"></div>
+
+  <button class="guide-btn activo" id="guide-none" onclick="cambiarGuia('none')" title="Sin Guía">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+    </svg>
+    <span class="tip">Sin Canva Guide</span>
+  </button>
+
+  <button class="guide-btn" id="guide-1" onclick="cambiarGuia('canva-guide.png')" title="Guía 1">
+    <span style="font-weight:900; font-size:12px;">G1</span>
+    <span class="tip">Canva Guide 1</span>
+  </button>
+
+  <button class="guide-btn" id="guide-2" onclick="cambiarGuia('canva-guide2.png')" title="Guía 2">
+    <span style="font-weight:900; font-size:12px;">G2</span>
+    <span class="tip">Canva Guide 2</span>
+  </button>
+
+  <button class="guide-btn" id="guide-3" onclick="cambiarGuia('canva-guide3.png')" title="Guía 3">
+    <span style="font-weight:900; font-size:12px;">G3</span>
+    <span class="tip">Canva Guide 3</span>
   </button>
 
   <div class="sidebar-sep"></div>
 
+
+
+  <!-- BORRAR TODO -->
   <button class="btn-danger" onclick="limpiarTodo()">
-    🗑️<span class="tip">Limpiar todo</span>
+    <svg class="w-6 h-6 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+      <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5v14m-6-8h6m-6 4h6m4.506-1.494L15.012 12m0 0 1.506-1.506M15.012 12l1.506 1.506M15.012 12l-1.506-1.506M20 19H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1Z"/>
+    </svg>
+    <span class="tip">Limpiar todo</span>
   </button>
   <div id="status" title="Conectado"></div>
 </div>
@@ -317,32 +97,34 @@ input:focus { outline: none; border-color: var(--accent); }
 <!-- ════════ CANVAS ════════ -->
 <div id="canvas-wrap">
   <canvas id="canvas-main"></canvas>
+
   <img
-  id="canvas-overlay"
-  src="canva-guide.png"
-  style="
-    position:absolute;
-    left:50%;
-    top:50%;
-    transform:translate(-50%,-50%);
-    pointer-events:none;
-    opacity:0.50;
-    object-fit:fill;
-    z-index:5;
-  ">
+    id="canvas-overlay"
+    src=""
+    style="
+      position:absolute;
+      left:50%;
+      top:50%;
+      transform:translate(-50%,-50%);
+      pointer-events:none;
+      opacity:0.35; /* Un pelín más sutil para que no moleste al dibujar */
+      object-fit:fill;
+      z-index:5;
+      display:none;
+    ">
+
   <textarea id="text-input-el" rows="1"></textarea>
   <div id="drop-overlay">Suelta la imagen aquí 🖼️</div>
 </div>
 
 <!-- ════════ PROPS PANEL ════════ -->
 <div id="props">
-
   <!-- Draw props -->
   <div id="props-draw" class="prop-group">
     <h2>Pincel</h2>
     <div class="prop-row">
       <label>Color</label>
-      <input type="color" id="draw-color" value="#ff4fd8">
+      <input type="color" id="draw-color" value="#ffffff">
     </div>
     <div class="prop-row">
       <label>Grosor</label>
@@ -352,7 +134,7 @@ input:focus { outline: none; border-color: var(--accent); }
     <button class="prop-btn sec" onclick="limpiarDibujo()">Limpiar trazos</button>
   </div>
 
-  <div class="prop-sep"></div>
+  <!-- <div class="prop-sep"></div> -->
 
   <!-- Text props -->
   <div id="props-text" class="prop-group">
@@ -367,7 +149,7 @@ input:focus { outline: none; border-color: var(--accent); }
     </div>
   </div>
 
-  <div class="prop-sep"></div>
+  <!-- <div class="prop-sep"></div> -->
 
   <!-- Selection props -->
   <div id="props-select" class="prop-group" style="display:none">
@@ -383,6 +165,9 @@ input:focus { outline: none; border-color: var(--accent); }
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
+let selectingArea = false; // Indica si estamos creando el recuadro de selección
+let selAreaStart = { x: 0, y: 0 };
+let selAreaEnd = { x: 0, y: 0 };
 // ═══════════════════════════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
@@ -423,11 +208,26 @@ function fitCanvas() {
   canvas.style.width  = (OVERLAY_W * scale) + 'px';
   canvas.style.height = (OVERLAY_H * scale) + 'px';
 
-  guide.style.width  = canvas.style.width;
-  guide.style.height = canvas.style.height;
+  // ═════════════════════════════════════════════════════════════════════════
+  // INICIALIZACIÓN COMPLETA SIN GUÍA (Al cargar)
+  // ═════════════════════════════════════════════════════════════════════════
+  // Si la guía no tiene un src asignado o está oculta, nos aseguramos de apagarla
+  if (!guide.getAttribute('src') || guide.style.display === 'none') {
+    guide.style.display = 'none';
+    guide.src = '';
+    // Forzamos que el botón de "Sin Guía" tenga la clase activo por código
+    const btnNone = document.getElementById('guide-none');
+    if (btnNone) btnNone.classList.add('activo');
+  } else {
+    // Si tuviera una guía activa, sí calculamos su tamaño
+    guide.style.width  = canvas.style.width;
+    guide.style.height = canvas.style.height;
+  }
 
   redraw();
 }
+
+
 window.addEventListener('resize', fitCanvas);
 fitCanvas();
 
@@ -448,9 +248,7 @@ function toOverlay(clientX, clientY) {
 socket.on('connect',    () => { document.getElementById('status').classList.remove('off'); });
 socket.on('disconnect', () => { document.getElementById('status').classList.add('off'); });
 
-// Recibir trazos propios de vuelta (porque el server hace io.emit)
-socket.on('trazo', (d) => { drawStrokes.push(d); redraw(); });
-socket.on('limpiar-dibujo', () => { drawStrokes = []; redraw(); });
+// Nota: Eliminados los socket.on('trazo') individuales
 
 socket.on('obj-add', (d) => {
   if (d.tipo === 'imagen') {
@@ -474,39 +272,36 @@ socket.on('obj-remove', ({ id }) => {
   redraw();
 });
 socket.on('limpiar-todo', () => {
-  drawStrokes = []; objetos = {}; selId = null; redraw();
+  objetos = {}; selId = null; redraw();
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // REDRAW (canvas de control)
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// REDRAW COMPLETO (Con suavizado de curvas Bézier y soporte de grupos)
+// ═══════════════════════════════════════════════════════════════════════════
 function redraw() {
   ctx.clearRect(0, 0, OVERLAY_W, OVERLAY_H);
 
-  // Cuadrícula tenue
+  // Cuadrícula tenue de fondo
   ctx.strokeStyle = 'rgba(255,255,255,0.03)';
   ctx.lineWidth = 1;
   for (let x = 0; x < OVERLAY_W; x += 96) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,OVERLAY_H); ctx.stroke(); }
   for (let y = 0; y < OVERLAY_H; y += 96) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(OVERLAY_W,y); ctx.stroke(); }
 
-  // Trazos libres
-  for (const d of drawStrokes) {
-    ctx.globalCompositeOperation = d.modo === 'borrar' ? 'destination-out' : 'source-over';
-    ctx.strokeStyle = d.color;
-    ctx.lineWidth = d.grosor;
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.beginPath(); ctx.moveTo(d.x1, d.y1); ctx.lineTo(d.x2, d.y2); ctx.stroke();
-  }
-  ctx.globalCompositeOperation = 'source-over';
-
-  // Objetos
+  // Renderizado de Objetos (Imágenes, Textos, Trazos y Grupos)
   for (const [id, obj] of Object.entries(objetos)) {
+
+    // 1. RENDER DE IMÁGENES
     if (obj.tipo === 'imagen' && obj._img) {
       ctx.drawImage(obj._img, obj.x, obj.y, obj.w, obj.h);
-    } else if (obj.tipo === 'texto') {
+    }
+
+    // 2. RENDER DE TEXTOS
+    else if (obj.tipo === 'texto') {
       ctx.font = `900 ${obj.fontSize || 48}px 'Segoe UI', sans-serif`;
       ctx.fillStyle = obj.color || '#fff';
-      // Sombra texto
       ctx.shadowColor = 'rgba(0,0,0,0.9)';
       ctx.shadowBlur = 0;
       ctx.lineWidth = 6;
@@ -516,17 +311,68 @@ function redraw() {
       ctx.shadowBlur = 0;
     }
 
-    // Borde selección
+    // 3. RENDER DE TRAZOS VECTORIALES SUAVIZADOS
+    else if (obj.tipo === 'trazo' && obj.lineas && obj.lineas.length > 0) {
+      ctx.save();
+      ctx.translate(obj.x, obj.y);
+
+      // Matriz de escala proporcional para permitir redimensionado dinámico
+      let origW = obj.lineas.reduce((max, l) => Math.max(max, l.x1, l.x2), 10);
+      let origH = obj.lineas.reduce((max, l) => Math.max(max, l.y1, l.y2), 10);
+      ctx.scale(obj.w / origW, obj.h / origH);
+
+      const primerTrazo = obj.lineas[0];
+      ctx.globalCompositeOperation = primerTrazo.modo === 'borrar' ? 'destination-out' : 'source-over';
+      ctx.strokeStyle = primerTrazo.color;
+      ctx.lineWidth = primerTrazo.grosor;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+      ctx.beginPath();
+      ctx.moveTo(primerTrazo.x1, primerTrazo.y1);
+
+      // Algoritmo Chaikin / Bézier Cuadrático para promediar puntos continuos
+      for (let i = 0; i < obj.lineas.length - 1; i++) {
+        const curr = obj.lineas[i];
+        const next = obj.lineas[i + 1];
+
+        const midX = (curr.x2 + next.x1) / 2;
+        const midY = (curr.y2 + next.y1) / 2;
+
+        ctx.quadraticCurveTo(curr.x2, curr.y2, midX, midY);
+      }
+
+      // Conexión del último punto de la cadena vectorial
+      const ultimo = obj.lineas[obj.lineas.length - 1];
+      ctx.lineTo(ultimo.x2, ultimo.y2);
+      ctx.stroke();
+
+      ctx.restore();
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    // 4. BORDE DE SELECCIÓN (Aplica a cualquier tipo de objeto o grupo seleccionado)
     if (id === selId) {
       ctx.strokeStyle = '#7c6cfa';
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 3]);
       ctx.strokeRect(obj.x - 2, obj.y - 2, obj.w + 4, obj.h + 4);
       ctx.setLineDash([]);
-      // Handle resize
+
+      // Cuadrado/Handle de redimensionado (esquina inferior derecha)
       ctx.fillStyle = '#7c6cfa';
       ctx.fillRect(obj.x + obj.w - 6, obj.y + obj.h - 6, 12, 12);
     }
+  }
+
+  // 5. RECUADRO DE SELECCIÓN MÚLTIPLE EN VIVO (Marquesina translúcida)
+  if (selectingArea) {
+    ctx.strokeStyle = 'rgba(124, 108, 250, 0.8)';
+    ctx.fillStyle = 'rgba(124, 108, 250, 0.1)';
+    ctx.lineWidth = 1;
+    const widthArea = selAreaEnd.x - selAreaStart.x;
+    const heightArea = selAreaEnd.y - selAreaStart.y;
+    ctx.fillRect(selAreaStart.x, selAreaStart.y, widthArea, heightArea);
+    ctx.strokeRect(selAreaStart.x, selAreaStart.y, widthArea, heightArea);
   }
 }
 
@@ -558,11 +404,19 @@ canvas.addEventListener('mousemove', onMove);
 canvas.addEventListener('mouseup',   onUp);
 canvas.addEventListener('mouseleave', onUp);
 
+// Variable temporal para guardar las líneas del trazo actual mientras se dibuja
+let trazoActualLineas = [];
+let trazoMinX = Infinity, trazoMinY = Infinity, trazoMaxX = -Infinity, trazoMaxY = -Infinity;
 function onDown(e) {
   const pos = toOverlay(e.clientX, e.clientY);
 
   if (herramienta === 'draw' || herramienta === 'eraser') {
-    pintando = true; lastX = pos.x; lastY = pos.y;
+    pintando = true;
+    lastX = pos.x;
+    lastY = pos.y;
+    trazoActualLineas = [];
+    trazoMinX = pos.x; trazoMaxX = pos.x;
+    trazoMinY = pos.y; trazoMaxY = pos.y;
     return;
   }
 
@@ -579,7 +433,7 @@ function onDown(e) {
         return;
       }
     }
-    // ¿Clic en objeto?
+    // ¿Clic en un objeto existente?
     const hit = hitTest(pos.x, pos.y);
     if (hit) {
       selId = hit;
@@ -588,7 +442,11 @@ function onDown(e) {
       dragOffY = pos.y - objetos[hit].y;
       document.getElementById('props-select').style.display = '';
     } else {
+      // Si hace clic en el vacío, inicia selección por recuadro múltiple
       deseleccionar();
+      selectingArea = true;
+      selAreaStart = { x: pos.x, y: pos.y };
+      selAreaEnd = { x: pos.x, y: pos.y };
     }
     redraw();
     return;
@@ -607,13 +465,64 @@ function onMove(e) {
     const color  = herramienta === 'eraser' ? '#000' : document.getElementById('draw-color').value;
     const grosor = parseInt(document.getElementById('draw-size').value);
     const modo   = herramienta === 'eraser' ? 'borrar' : 'pintar';
-    socket.emit('trazo', { x1: lastX, y1: lastY, x2: pos.x, y2: pos.y, color, grosor, modo });
+
+    // 1. Guardar localmente
+    trazoActualLineas.push({ x1: lastX, y1: lastY, x2: pos.x, y2: pos.y, color, grosor, modo });
+
+    // 2. TRANSMITIR EN VIVO: Enviamos este pequeño segmento al instante a los sockets
+    socket.emit('trazo-en-vivo', { x1: lastX, y1: lastY, x2: pos.x, y2: pos.y, color, grosor, modo });
+
+    // 3. Redibujar de forma fluida en tu pantalla
+    redraw();
+
+    if (trazoActualLineas.length > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = modo === 'borrar' ? 'destination-out' : 'source-over';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = grosor;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+      ctx.beginPath();
+      ctx.moveTo(trazoActualLineas[0].x1, trazoActualLineas[0].y1);
+
+      for (let i = 0; i < trazoActualLineas.length - 1; i++) {
+        const curr = trazoActualLineas[i];
+        const next = trazoActualLineas[i + 1];
+        const midX = (curr.x2 + next.x1) / 2;
+        const midY = (curr.y2 + next.y1) / 2;
+        ctx.quadraticCurveTo(curr.x2, curr.y2, midX, midY);
+      }
+
+      const ultimo = trazoActualLineas[trazoActualLineas.length - 1];
+      ctx.lineTo(ultimo.x2, ultimo.y2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     lastX = pos.x; lastY = pos.y;
+    return;
+  }
+
+  // Si está arrastrando el recuadro de selección múltiple
+  if (selectingArea) {
+    selAreaEnd = { x: pos.x, y: pos.y };
+    redraw();
     return;
   }
 
   if (dragging && selId && objetos[selId]) {
     const nx = pos.x - dragOffX, ny = pos.y - dragOffY;
+
+    if (objetos[selId].tipo === 'grupo' && objetos[selId].hijos) {
+      const dx = nx - objetos[selId].x;
+      const dy = ny - objetos[selId].y;
+      objetos[selId].hijos.forEach(hijo => {
+        hijo.x += dx;
+        hijo.y += dy;
+        socket.emit('obj-move', { id: hijo.id, x: hijo.x, y: hijo.y });
+      });
+    }
+
     objetos[selId].x = nx; objetos[selId].y = ny;
     socket.emit('obj-move', { id: selId, x: nx, y: ny });
     redraw();
@@ -624,6 +533,21 @@ function onMove(e) {
     const dx = pos.x - resizeStartX, dy = pos.y - resizeStartY;
     const nw = Math.max(40, resizeStartW + dx);
     const nh = Math.max(40, resizeStartH + dy);
+
+    if (objetos[selId].tipo === 'grupo' && objetos[selId].hijos) {
+      const scaleX = nw / resizeStartW;
+      const scaleY = nh / resizeStartH;
+      objetos[selId].hijos.forEach(hijo => {
+        const relX = hijo.x - resizeStartOX;
+        const relY = hijo.y - resizeStartOY;
+        hijo.x = resizeStartOX + (relX * scaleX);
+        hijo.y = resizeStartOY + (relY * scaleY);
+        hijo.w = hijo.w * scaleX;
+        hijo.h = hijo.h * scaleY;
+        socket.emit('obj-resize', { id: hijo.id, x: hijo.x, y: hijo.y, w: hijo.w, h: hijo.h });
+      });
+    }
+
     objetos[selId].w = nw; objetos[selId].h = nh;
     socket.emit('obj-resize', { id: selId, x: resizeStartOX, y: resizeStartOY, w: nw, h: nh });
     redraw();
@@ -632,9 +556,83 @@ function onMove(e) {
 }
 
 function onUp() {
-  pintando = false; dragging = false; resizing = false;
-}
+  if (pintando && trazoActualLineas.length > 0) {
+    // CALCULAMOS los límites fijos AQUÍ, de una sola vez cuando el trazo ya terminó.
+    const xCoords = trazoActualLineas.map(l => [l.x1, l.x2]).flat();
+    const yCoords = trazoActualLineas.map(l => [l.y1, l.y2]).flat();
 
+    const finalMinX = Math.min(...xCoords);
+    const finalMaxX = Math.max(...xCoords);
+    const finalMinY = Math.min(...yCoords);
+    const finalMaxY = Math.max(...yCoords);
+
+    const w = finalMaxX - finalMinX;
+    const h = finalMaxY - finalMinY;
+
+    // Normalizamos con los valores estáticos recién calculados
+    const lineasNormalizadas = trazoActualLineas.map(l => ({
+      x1: l.x1 - finalMinX,
+      y1: l.y1 - finalMinY,
+      x2: l.x2 - finalMinX,
+      y2: l.y2 - finalMinY,
+      color: l.color,
+      grosor: l.grosor,
+      modo: l.modo
+    }));
+
+    const id = 'stroke_' + Date.now();
+    socket.emit('obj-add', {
+      id,
+      tipo: 'trazo',
+      x: finalMinX,
+      y: finalMinY,
+      w: Math.max(10, w),
+      h: Math.max(10, h),
+      lineas: lineasNormalizadas
+    });
+  }
+
+  if (selectingArea) {
+    selectingArea = false;
+    const xMin = Math.min(selAreaStart.x, selAreaEnd.x);
+    const xMax = Math.max(selAreaStart.x, selAreaEnd.x);
+    const yMin = Math.min(selAreaStart.y, selAreaEnd.y);
+    const yMax = Math.max(selAreaStart.y, selAreaEnd.y);
+
+    let capturados = [];
+    for (const [id, obj] of Object.entries(objetos)) {
+      if (obj.tipo === 'grupo') continue;
+      const centerXX = obj.x + (obj.w / 2);
+      const centerYY = obj.y + (obj.h / 2);
+      if (centerXX >= xMin && centerXX <= xMax && centerYY >= yMin && centerYY <= yMax) {
+        capturados.push(obj);
+      }
+    }
+
+    if (capturados.length > 1) {
+      const gMinX = Math.min(...capturados.map(o => o.x));
+      const gMaxX = Math.max(...capturados.map(o => o.x + o.w));
+      const gMinY = Math.min(...capturados.map(o => o.y));
+      const gMaxY = Math.max(...capturados.map(o => o.y + o.h));
+
+      const grupoId = 'group_' + Date.now();
+      socket.emit('obj-add', {
+        id: grupoId,
+        tipo: 'grupo',
+        x: gMinX,
+        y: gMinY,
+        w: gMaxX - gMinX,
+        h: gMaxY - gMinY,
+        hijos: capturados
+      });
+      selId = grupoId;
+      document.getElementById('props-select').style.display = '';
+    }
+  }
+
+  pintando = false; dragging = false; resizing = false;
+  redraw();
+}
 // ═══════════════════════════════════════════════════════════════════════════
 // HIT TEST
 // ═══════════════════════════════════════════════════════════════════════════
@@ -655,13 +653,17 @@ function abrirTextInput(ox, oy, cx, cy) {
   const r = canvas.getBoundingClientRect();
   const s = canvasScale();
   textPos = { x: ox, y: oy };
+
   textEl.style.display = 'block';
   textEl.style.left = (cx - r.left) + 'px';
   textEl.style.top  = (cy - r.top)  + 'px';
   textEl.style.fontSize = (parseInt(document.getElementById('text-size').value) * s) + 'px';
   textEl.style.color = document.getElementById('text-color').value;
   textEl.value = '';
-  textEl.focus();
+
+  setTimeout(() => {
+    textEl.focus();
+  }, 50);
 }
 
 function cerrarTextInput() {
@@ -672,19 +674,28 @@ function cerrarTextInput() {
 
 textEl.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { cerrarTextInput(); return; }
+
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     const texto = textEl.value.trim();
+
     if (texto && textPos) {
       const fontSize = parseInt(document.getElementById('text-size').value);
       const color    = document.getElementById('text-color').value;
       const id = 'txt_' + Date.now();
       const w  = Math.max(200, texto.length * fontSize * 0.6);
       const h  = fontSize * 1.5;
+
       socket.emit('obj-add', { id, tipo: 'texto', texto, x: textPos.x, y: textPos.y, w, h, color, fontSize });
       toast('💬 Texto agregado');
     }
+
     cerrarTextInput();
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // CAMBIO AUTOMÁTICO A SELECCIÓN
+    // ═════════════════════════════════════════════════════════════════════════
+    setTool('select');
   }
 });
 
@@ -717,6 +728,7 @@ async function subirImagen(file) {
   // Tamaño por defecto razonable en el overlay
   socket.emit('obj-add', { id, tipo: 'imagen', url, x: 200, y: 200, w: 400, h: 300 });
   toast('🖼️ Imagen enviada');
+  setTool('select');
 }
 
 // Drag & drop en canvas-wrap
@@ -748,15 +760,30 @@ function deseleccionar() {
 
 function eliminarSeleccionado() {
   if (!selId) return;
-  socket.emit('obj-remove', { id: selId });
-  toast('🗑️ Objeto eliminado');
+
+  const obj = objetos[selId];
+
+  // Si es un grupo, borrar primero a todos sus hijos del servidor
+  if (obj.tipo === 'grupo' && obj.hijos) {
+    obj.hijos.forEach(hijo => {
+      socket.emit('obj-remove', { id: hijo.id, url: hijo.url, tipo: hijo.tipo });
+    });
+  }
+
+  // Enviamos el ID, el tipo y la URL al servidor para que sepa si debe borrar del disco
+  socket.emit('obj-remove', { id: selId, url: obj.url, tipo: obj.tipo });
+  toast('🗑️ Objetos eliminados');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // LIMPIAR
 // ═══════════════════════════════════════════════════════════════════════════
 function limpiarDibujo() {
-  socket.emit('limpiar-dibujo');
+  for (const id in objetos) {
+    if (objetos[id].tipo === 'trazo') {
+      socket.emit('obj-remove', { id });
+    }
+  }
   toast('🧹 Trazos limpiados');
 }
 function limpiarTodo() {
@@ -766,11 +793,87 @@ function limpiarTodo() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// GESTOR DE CANVA GUIDES
+// ═══════════════════════════════════════════════════════════════════════════
+function cambiarGuia(nombreArchivo) {
+  const guideEl = document.getElementById('canvas-overlay');
+
+  // Limpiar el estado activo SOLO de los botones de guía
+  document.querySelectorAll('.guide-btn').forEach(b => b.classList.remove('activo'));
+
+  if (nombreArchivo === 'none') {
+    guideEl.style.display = 'none';
+    guideEl.src = '';
+    document.getElementById('guide-none').classList.add('activo');
+  } else {
+    guideEl.src ="img/" + nombreArchivo;
+    guideEl.style.display = 'block';
+
+    if (nombreArchivo === 'canva-guide.png')  document.getElementById('guide-1').classList.add('activo');
+    if (nombreArchivo === 'canva-guide2.png') document.getElementById('guide-2').classList.add('activo');
+    if (nombreArchivo === 'canva-guide3.png') document.getElementById('guide-3').classList.add('activo');
+  }
+
+  fitCanvas();
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ATAJOS DE TECLADO (TECLAS RÁPIDAS)
+// ═══════════════════════════════════════════════════════════════════════════
+window.addEventListener('keydown', (e) => {
+  // Ignorar atajos si el usuario está escribiendo en un input o textarea
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+    return;
+  }
+
+  const key = e.key.toLowerCase();
+
+  // CTRL + SUPR -> Limpiar todo
+  if (e.ctrlKey && (e.key === 'Delete' || e.key === 'Supr')) {
+    e.preventDefault();
+    limpiarTodo();
+    return;
+  }
+
+  // SUPR o BACKSPACE -> Eliminar objeto seleccionado
+  if (e.key === 'Delete' || e.key === 'Supr' || e.key === 'Backspace') {
+    e.preventDefault();
+    eliminarSeleccionado();
+    return;
+  }
+
+  // Atajos de herramientas de una sola tecla
+  switch (key) {
+    case 'v':
+      setTool('select');
+      break;
+    case 'p':
+    case 'c':
+    case 'l':
+      setTool('draw');
+      break;
+    case 'b':
+    case 'e':
+      setTool('eraser');
+      break;
+    case 'i':
+    case 'f':
+      triggerUpload();
+      break;
+    case 't':
+      setTool('text');
+      break;
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // SLIDERS UI
 // ═══════════════════════════════════════════════════════════════════════════
 document.getElementById('draw-size').addEventListener('input', function() {
   document.getElementById('draw-size-val').textContent = this.value;
 });
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TOAST
