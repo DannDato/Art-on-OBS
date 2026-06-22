@@ -1,19 +1,25 @@
 const express = require('express');
 const path = require('path');
 const upload = require('../config/multer');
-const verificarAutenticacion = require('../middlewares/authenticate'); // <── ¡Importamos tu nuevo middleware!
+const verificarAutenticacion = require('../middlewares/authenticate');
 
 // CONTRASEÑA GLOBAL DEL PANEL
-const PASSWORD_PANEL = "STRC_Art";
+const PASSWORD_PANEL = "Maquinaria01";
 
 module.exports = function(app, uploadsDir) {
 
-  // LOGIN
-  app.get('/login', (req, res) => {res.redirect('/login.html');});
-  // ── RUTAS PÚBLICAS ─────────────────────────────────────────────────────────
+  // Redirección amigable si alguien entra a /login a secas
+  app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public', 'login.html'));
+  });
+
+  // ── RUTAS PÚBLICAS LIMPIAS ─────────────────────────────────────────────────
   app.use('/uploads', express.static(uploadsDir));
-  // El overlay de OBS siempre debe ser público
-  app.get('/overlay.html', (req, res) => {res.sendFile(path.join(__dirname, '../public', 'overlay.html'));});
+
+  // El overlay de OBS ahora se accede desde http://localhost:3069/overlay
+  app.get('/overlay', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public', 'overlay.html'));
+  });
 
   // Procesar formulario de inicio de sesión
   app.post('/api/login', express.json(), (req, res) => {
@@ -25,21 +31,30 @@ module.exports = function(app, uploadsDir) {
     res.status(401).json({ error: "Contraseña incorrecta" });
   });
 
-  // Ruta para cerrar sesión
+  // Ruta para cerrar sesión (redirige a la nueva ruta limpia /login)
   app.get('/api/logout', (req, res) => {
     req.session.destroy();
-    res.redirect('/login.html');
+    res.redirect('/login');
   });
 
-  // ── RUTAS PROTEGIDAS (Inyectando el middleware importado) ──────────────────
-  app.get('/control.html', verificarAutenticacion, (req, res) => {res.sendFile(path.join(__dirname, '../public', 'control.html'));});
+  // ── RUTAS PROTEGIDAS LIMPIAS ───────────────────────────────────────────────
+  // El panel de control ahora se accede desde http://localhost:3069/control
+  app.get('/control', verificarAutenticacion, (req, res) => {
+    res.sendFile(path.join(__dirname, '../public', 'control.html'));
+  });
 
-  // Subir imagen (Protegido por el middleware de autenticación y procesado por Multer)
+  // Subir imagen
   app.post('/upload', verificarAutenticacion, upload.single('imagen'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No se subió archivo' });
     res.json({ ok: true, url: `/uploads/${req.file.filename}` });
   });
 
-  // El resto de la carpeta pública al final
-  app.use(express.static(path.join(__dirname, '../public')));
+  // ── AJUSTE CRÍTICO DE SEGURIDAD ────────────────────────────────────────────
+  // Servimos los estilos y scripts, pero EVITAMOS que sirva los .html sueltos directamente
+  app.use(express.static(path.join(__dirname, '../public'), { extensions: [] }));
+
+  // Si alguien escribe una ruta que no existe, lo mandamos al login por seguridad
+  app.use((req, res) => {
+    res.redirect('/login');
+  });
 };

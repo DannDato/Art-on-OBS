@@ -2,8 +2,9 @@
 <html lang="es">
 <head>
 <script src="https://unpkg.com/lucide@latest"></script>
+<link rel="shortcut icon" href="img/icon.ico" type="image/x-icon">
 <meta charset="UTF-8">
-<title>Overlay Control</title>
+<title>DrawCast | DannDato</title>
 <link rel="stylesheet" href="style/main.css">
 </head>
 <body>
@@ -95,6 +96,9 @@
 </div>
 
 <!-- ════════ CANVAS ════════ -->
+<div style="position:absolute; top:-2px; left:80px; z-index:10; pointer-events:none;">
+  <h2 style="color: var(--accent); margin: 0 0 -100px 0 ;">DrawCast <span style="color: #ffffff;">DannDato</span></h2>
+</div>
 <div id="canvas-wrap">
   <canvas id="canvas-main"></canvas>
 
@@ -124,11 +128,11 @@
     <h2>Pincel</h2>
     <div class="prop-row">
       <label>Color</label>
-      <input type="color" id="draw-color" value="#ffffff">
+      <input type="color" id="draw-color" value="#EBEBEB">
     </div>
     <div class="prop-row">
       <label>Grosor</label>
-      <input type="range" id="draw-size" min="2" max="60" value="8">
+      <input type="range" id="draw-size" min="2" max="100" value="10">
       <span id="draw-size-val" style="min-width:24px;color:var(--muted)">8</span>
     </div>
     <button class="prop-btn sec" onclick="limpiarDibujo()">Limpiar trazos</button>
@@ -408,6 +412,7 @@ canvas.addEventListener('mouseleave', onUp);
 let trazoActualLineas = [];
 let trazoMinX = Infinity, trazoMinY = Infinity, trazoMaxX = -Infinity, trazoMaxY = -Infinity;
 function onDown(e) {
+  // deseleccionar();
   const pos = toOverlay(e.clientX, e.clientY);
 
   if (herramienta === 'draw' || herramienta === 'eraser') {
@@ -426,6 +431,7 @@ function onDown(e) {
       const obj = objetos[selId];
       if (pos.x >= obj.x + obj.w - 10 && pos.x <= obj.x + obj.w + 10 &&
           pos.y >= obj.y + obj.h - 10 && pos.y <= obj.y + obj.h + 10) {
+        guardarEstadoHistorial();
         resizing = true;
         resizeStartX = pos.x; resizeStartY = pos.y;
         resizeStartW = obj.w; resizeStartH = obj.h;
@@ -436,6 +442,7 @@ function onDown(e) {
     // ¿Clic en un objeto existente?
     const hit = hitTest(pos.x, pos.y);
     if (hit) {
+      guardarEstadoHistorial();
       selId = hit;
       dragging = true;
       dragOffX = pos.x - objetos[hit].x;
@@ -462,6 +469,7 @@ function onMove(e) {
   const pos = toOverlay(e.clientX, e.clientY);
 
   if (pintando) {
+    // guardarEstadoHistorial();
     const color  = herramienta === 'eraser' ? '#000' : document.getElementById('draw-color').value;
     const grosor = parseInt(document.getElementById('draw-size').value);
     const modo   = herramienta === 'eraser' ? 'borrar' : 'pintar';
@@ -557,6 +565,7 @@ function onMove(e) {
 
 function onUp() {
   if (pintando && trazoActualLineas.length > 0) {
+    guardarEstadoHistorial();
     // CALCULAMOS los límites fijos AQUÍ, de una sola vez cuando el trazo ya terminó.
     const xCoords = trazoActualLineas.map(l => [l.x1, l.x2]).flat();
     const yCoords = trazoActualLineas.map(l => [l.y1, l.y2]).flat();
@@ -673,9 +682,9 @@ function cerrarTextInput() {
 }
 
 textEl.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { cerrarTextInput(); return; }
 
-  if (e.key === 'Enter' && !e.shiftKey) {
+  if (e.key === 'Escape') { cerrarTextInput(); return; }
+    if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     const texto = textEl.value.trim();
 
@@ -692,12 +701,77 @@ textEl.addEventListener('keydown', (e) => {
 
     cerrarTextInput();
 
-    // ═════════════════════════════════════════════════════════════════════════
-    // CAMBIO AUTOMÁTICO A SELECCIÓN
-    // ═════════════════════════════════════════════════════════════════════════
     setTool('select');
   }
 });
+
+window.addEventListener('keydown', (e) => {
+  // LINEA DE DEBUG: Abre la consola (F12) en tu navegador para ver si esto imprime al presionar Ctrl+A
+
+  // Interceptar Ctrl + A (o Cmd + A en Mac) usando .code
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyA') {
+
+    // Si estás editando texto, dejamos que el comportamiento nativo seleccione el texto de la caja
+    if (document.activeElement && (document.activeElement.id === 'text-input-el' || document.activeElement.tagName === 'INPUT')) {
+      return;
+    }
+
+    e.preventDefault(); // Detener la selección por defecto de Chrome
+    seleccionarTodo();
+    return;
+  }
+
+  // Tus otros atajos abajo...
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    eliminarSeleccionado();
+  }
+});
+
+function seleccionarTodo() {
+  // Obtener todos los objetos que están actualmente vivos en el lienzo
+  const listaObjetos = Object.values(objetos);
+
+  // Si no hay nada en pantalla, no hacemos nada
+  if (listaObjetos.length === 0) return;
+
+  // Filtrar para evitar meter grupos dentro de grupos si ya había uno seleccionado
+  const capturados = listaObjetos.filter(obj => obj.tipo !== 'grupo');
+
+  if (capturados.length === 1) {
+    // Si solo hay un objeto en pantalla, lo seleccionamos de forma individual
+    selId = capturados[0].id;
+    document.getElementById('props-select').style.display = '';
+    toast('✨ Objeto seleccionado');
+  }
+  else if (capturados.length > 1) {
+    // REUTILIZACIÓN DE TU LÓGICA DE GRUPO:
+    // Calculamos las esquinas máximas de TODOS los objetos juntos
+    const gMinX = Math.min(...capturados.map(o => o.x));
+    const gMaxX = Math.max(...capturados.map(o => o.x + o.w));
+    const gMinY = Math.min(...capturados.map(o => o.y));
+    const gMaxY = Math.max(...capturados.map(o => o.y + o.h));
+
+    const grupoId = 'group_' + Date.now();
+
+    // Le avisamos al servidor y a las pantallas que creamos un macro-grupo temporal
+    socket.emit('obj-add', {
+      id: grupoId,
+      tipo: 'grupo',
+      x: gMinX,
+      y: gMinY,
+      w: gMaxX - gMinX,
+      h: gMaxY - gMinY,
+      hijos: capturados
+    });
+
+    // Lo asignamos como la selección activa actual
+    selId = grupoId;
+    document.getElementById('props-select').style.display = '';
+    toast(`✨ ${capturados.length} objetos agrupados y seleccionados`);
+  }
+
+  redraw();
+}
 
 // Auto-resize textarea
 textEl.addEventListener('input', () => {
@@ -760,7 +834,7 @@ function deseleccionar() {
 
 function eliminarSeleccionado() {
   if (!selId) return;
-
+  guardarEstadoHistorial();
   const obj = objetos[selId];
 
   // Si es un grupo, borrar primero a todos sus hijos del servidor
@@ -779,6 +853,7 @@ function eliminarSeleccionado() {
 // LIMPIAR
 // ═══════════════════════════════════════════════════════════════════════════
 function limpiarDibujo() {
+  guardarEstadoHistorial();
   for (const id in objetos) {
     if (objetos[id].tipo === 'trazo') {
       socket.emit('obj-remove', { id });
@@ -872,6 +947,76 @@ window.addEventListener('keydown', (e) => {
 // ═══════════════════════════════════════════════════════════════════════════
 document.getElementById('draw-size').addEventListener('input', function() {
   document.getElementById('draw-size-val').textContent = this.value;
+});
+
+// ── PILA DE HISTORIAL PARA CTRL + Z ──────────────────────────────────────────
+let historialUndo = [];
+const MAX_PASOS_HISTORIAL = 30; // Límite de memoria para no saturar el navegador
+
+// Guarda una copia del estado actual antes de que cambie algo
+function guardarEstadoHistorial() {
+  // Hacemos una copia profunda (deep clone) para romper la referencia del objeto
+  const copiaEstado = JSON.parse(JSON.stringify(objetos));
+
+  historialUndo.push(copiaEstado);
+
+  // Si superamos el límite, eliminamos el más viejo para liberar RAM
+  if (historialUndo.length > MAX_PASOS_HISTORIAL) {
+    historialUndo.shift();
+  }
+}
+
+// Ejecuta el Ctrl + Z
+function deshacerUltimaAccion() {
+  if (historialUndo.length === 0) {
+    toast("⚠️ Nada que deshacer");
+    return;
+  }
+
+  // 1. Sacamos el último estado guardado
+  const estadoAnterior = historialUndo.pop();
+
+  // 2. Avisamos al servidor que limpie el lienzo actual para remaquetar
+  socket.emit('limpiar-todo');
+
+  // 3. Restauramos los objetos localmente
+  objetos = {};
+
+  // 4. Volvemos a subir e inflar los objetos del estado anterior
+  for (const [id, obj] of Object.entries(estadoAnterior)) {
+    socket.emit('obj-add', obj);
+  }
+
+  deseleccionar();
+  toast("↩️ Deshecho");
+  redraw();
+}
+// Interceptar Ctrl + Z (o Cmd + Z en Mac)
+window.addEventListener('keydown', (e) => {
+  // ── 1. CONTROL DE RECUADRO CTRL + A ───────────────────────────────────────
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyA') {
+    if (document.activeElement && (document.activeElement.id === 'text-input-el' || document.activeElement.tagName === 'INPUT')) {
+      return;
+    }
+    e.preventDefault();
+    seleccionarTodo();
+    return;
+  }
+
+  // ── 2. CONTROL DE DESHACER CTRL + Z (¡AQUÍ QUEDA PERFECTO!) ────────────────
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+    if (document.activeElement && (document.activeElement.id === 'text-input-el' || document.activeElement.tagName === 'INPUT')) {
+      return;
+    }
+    e.preventDefault();
+    deshacerUltimaAccion();
+    return;
+  }
+
+  // ── 3. TU CONTROL DE BORRADO DE OBJETOS ──────────────────────────────────
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    eliminarSeleccionado();
+  }
 });
 
 

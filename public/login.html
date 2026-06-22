@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Art on OBS - Login</title>
+<title>DrawCast - Login</title>
 <style>
   body {
     margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center;
@@ -30,9 +30,9 @@
 <body>
 
 <div class="login-card">
-  <h2>🎛️ Control Panel Login</h2>
+  <h2>DrawCast <span style="color: #ffffff;">DannDato</span></h2>
   <input type="password" id="pass-input" placeholder="Introduce la contraseña" autofocus>
-  <button onclick="intentarLogin()">Entrar al Panel</button>
+  <button onclick="intentarLogin()">Entrar</button>
   <div id="error-msg"></div>
 </div>
 
@@ -50,7 +50,7 @@ async function intentarLogin() {
 
   const data = await res.json();
   if (res.ok && data.ok) {
-    window.location.href = '/control.html'; // Redirección exitosa
+    window.location.href = '/control'; // Redirección exitosa
   } else {
     errorEl.textContent = data.error || "Error al conectar";
   }
