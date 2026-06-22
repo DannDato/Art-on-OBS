@@ -4,7 +4,7 @@ const upload = require('../config/multer');
 const verificarAutenticacion = require('../middlewares/authenticate'); // <── ¡Importamos tu nuevo middleware!
 
 // CONTRASEÑA GLOBAL DEL PANEL
-const PASSWORD_PANEL = "streamer2026";
+const PASSWORD_PANEL = "STRC_Art";
 
 module.exports = function(app, uploadsDir) {
 
