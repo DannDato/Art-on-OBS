@@ -1,7 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const multer = require('multer');
+const session = require('express-session');
 const path = require('path');
 const fs = require('fs');
 
@@ -10,89 +10,31 @@ const server = http.createServer(app);
 const io = new Server(server);
 const PORT = 3069;
 
+// Configurar carpetas base
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `img_${Date.now()}${ext}`);
-  }
-});
-const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
+// ── CONFIGURACIÓN DE MIDDLEWARES ─────────────────────────────────────────────
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-app.use('/uploads', express.static(uploadsDir));
-app.use(express.static(path.join(__dirname, 'public')));
+// Configurar sesiones para proteger el control.html
+app.use(session({
+  secret: 'secreto-del-streamer-12345', // Cambia esto por lo que quieras
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 24 * 60 * 60 * 1000 } // Duración: 1 día
+}));
 
-// Subir imagen — devuelve URL, el cliente crea el obj-add
-app.post('/upload', upload.single('imagen'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No se subió archivo' });
-  res.json({ ok: true, url: `/uploads/${req.file.filename}` });
-});
+// Inyectar Rutas y Sockets modulares pasando las dependencias necesarias
+require('./routes/routes')(app, uploadsDir);
+require('./sockets/sockets')(io, uploadsDir);
 
-// Función para vaciar por completo la carpeta de subidas
-const vaciarCarpetaUploads = () => {
-  fs.readdir(uploadsDir, (err, files) => {
-    if (err) return console.error("Error leyendo carpeta de uploads:", err);
-    for (const file of files) {
-      fs.unlink(path.join(uploadsDir, file), (err) => {
-        if (err) console.error(`Error borrando archivo temporal ${file}:`, err);
-      });
-    }
-    console.log("🧨 Carpeta /uploads vaciada por completo.");
-  });
-};
-
-
-io.on('connection', (socket) => {
-  console.log('Conectado:', socket.id);
-
-    // Dibujo libre
-  socket.on('trazo-en-vivo', (d) => socket.broadcast.emit('trazo-en-vivo', d));
-
-  // Objetos posicionados (Trazos terminados, imágenes, textos, grupos)
-  socket.on('obj-add',    (d) => io.emit('obj-add', d));
-  socket.on('obj-move',   (d) => io.emit('obj-move', d));
-  socket.on('obj-resize', (d) => io.emit('obj-resize', d));
-  // Eliminar un objeto o un grupo, borrando sus imágenes del disco duro
-  // Eliminar un objeto o un grupo, borrando sus imágenes del disco duro
-  socket.on('obj-remove', (d) => {
-    // Si nos pasan un objeto que es una imagen y trae una URL válida
-    if (d && d.tipo === 'imagen' && d.url) {
-      // Extraemos solo el nombre del archivo (ej: img_1234.png)
-      const filename = path.basename(d.url);
-      const filepath = path.join(uploadsDir, filename);
-
-      // Borramos del disco si el archivo existe
-      if (fs.existsSync(filepath)) {
-        fs.unlink(filepath, (err) => {
-          if (err) console.error(`❌ Error al borrar archivo ${filename}:`, err);
-          else console.log(`🗑️ Archivo eliminado del disco: ${filename}`);
-        });
-      }
-    }
-
-    // Retransmitir a todas las pantallas (OBS y paneles) para que lo quiten visualmente
-    io.emit('obj-remove', { id: d.id });
-  });
-
-  // Nuclear
-  // Modifica tus listeners en io.on('connection') :
-  socket.on('limpiar-todo', () => {
-    vaciarCarpetaUploads();
-    io.emit('limpiar-todo');
-  });
-
-  socket.on('disconnect', () => {
-    console.log('Cliente desconectado, limpiando lienzo global...');
-    vaciarCarpetaUploads(); // <-- Limpieza automática al cerrar el panel
-    io.emit('limpiar-todo');
-  });
-});
-
+// Arrancar el Servidor
 server.listen(PORT, () => {
-  console.log(`✅ http://localhost:${PORT}`);
-  console.log(`🎮 Overlay OBS : http://localhost:${PORT}/overlay.html`);
-  console.log(`🎛️  Control     : http://localhost:${PORT}/control.html`);
+  console.log(`\n=================================================`);
+  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+  console.log(`Overlay OBS : http://localhost:${PORT}/overlay.html`);
+  console.log(`Control     : http://localhost:${PORT}/control.html`);
+  console.log(`=================================================\n`);
 });
