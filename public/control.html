@@ -176,6 +176,7 @@ let selAreaEnd = { x: 0, y: 0 };
 // CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
 const OVERLAY_W = 1920, OVERLAY_H = 1080;
+const DRAW_LAYER_ID = 'draw_layer_main';
 
 const socket = io();
 const canvas  = document.getElementById('canvas-main');
@@ -242,6 +243,95 @@ function toOverlay(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
   const s = canvasScale();
   return { x: (clientX - r.left) / s, y: (clientY - r.top) / s };
+}
+
+function renderLineasCompuestas(lineas, offsetX = 0, offsetY = 0, scaleX = 1, scaleY = 1) {
+  if (!lineas || lineas.length === 0) return;
+
+  let currentMode = null;
+
+  for (const seg of lineas) {
+    const mode = seg.modo === 'borrar' ? 'destination-out' : 'source-over';
+
+    if (mode !== currentMode) {
+      ctx.globalCompositeOperation = mode;
+      currentMode = mode;
+    }
+
+    ctx.strokeStyle = seg.color;
+    ctx.lineWidth = seg.grosor;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    ctx.beginPath();
+    ctx.moveTo(offsetX + (seg.x1 * scaleX), offsetY + (seg.y1 * scaleY));
+    ctx.lineTo(offsetX + (seg.x2 * scaleX), offsetY + (seg.y2 * scaleY));
+    ctx.stroke();
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function getDrawLayerBounds(layer) {
+  if (!layer || !layer.lineas || layer.lineas.length === 0) return null;
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const seg of layer.lineas) {
+    if (seg.modo === 'borrar') continue;
+    const half = Math.max(2, (seg.grosor || 2) / 2);
+    const x1 = layer.x + seg.x1;
+    const y1 = layer.y + seg.y1;
+    const x2 = layer.x + seg.x2;
+    const y2 = layer.y + seg.y2;
+
+    minX = Math.min(minX, x1 - half, x2 - half);
+    minY = Math.min(minY, y1 - half, y2 - half);
+    maxX = Math.max(maxX, x1 + half, x2 + half);
+    maxY = Math.max(maxY, y1 + half, y2 + half);
+  }
+
+  if (!isFinite(minX)) return null;
+  return { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
+}
+
+function distancePointToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+
+  if (dx === 0 && dy === 0) {
+    return Math.hypot(px - x1, py - y1);
+  }
+
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / ((dx * dx) + (dy * dy))));
+  const projX = x1 + (t * dx);
+  const projY = y1 + (t * dy);
+  return Math.hypot(px - projX, py - projY);
+}
+
+function hitDrawLayer(x, y) {
+  const layer = objetos[DRAW_LAYER_ID];
+  if (!layer || !layer.lineas || layer.lineas.length === 0) return false;
+
+  for (let i = layer.lineas.length - 1; i >= 0; i--) {
+    const seg = layer.lineas[i];
+    if (seg.modo === 'borrar') continue;
+
+    const x1 = layer.x + seg.x1;
+    const y1 = layer.y + seg.y1;
+    const x2 = layer.x + seg.x2;
+    const y2 = layer.y + seg.y2;
+    const tol = Math.max(6, (seg.grosor || 2) * 0.8);
+
+    if (distancePointToSegment(x, y, x1, y1, x2, y2) <= tol) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 
@@ -317,54 +407,66 @@ function redraw() {
 
     // 3. RENDER DE TRAZOS VECTORIALES SUAVIZADOS
     else if (obj.tipo === 'trazo' && obj.lineas && obj.lineas.length > 0) {
-      ctx.save();
-      ctx.translate(obj.x, obj.y);
+      if (obj.id === DRAW_LAYER_ID || obj.compuesto) {
+        renderLineasCompuestas(obj.lineas, obj.x || 0, obj.y || 0);
+      } else {
+        ctx.save();
+        ctx.translate(obj.x, obj.y);
 
-      // Matriz de escala proporcional para permitir redimensionado dinámico
-      let origW = obj.lineas.reduce((max, l) => Math.max(max, l.x1, l.x2), 10);
-      let origH = obj.lineas.reduce((max, l) => Math.max(max, l.y1, l.y2), 10);
-      ctx.scale(obj.w / origW, obj.h / origH);
+        // Matriz de escala proporcional para permitir redimensionado dinámico
+        let origW = obj.lineas.reduce((max, l) => Math.max(max, l.x1, l.x2), 10);
+        let origH = obj.lineas.reduce((max, l) => Math.max(max, l.y1, l.y2), 10);
+        ctx.scale(obj.w / origW, obj.h / origH);
 
-      const primerTrazo = obj.lineas[0];
-      ctx.globalCompositeOperation = primerTrazo.modo === 'borrar' ? 'destination-out' : 'source-over';
-      ctx.strokeStyle = primerTrazo.color;
-      ctx.lineWidth = primerTrazo.grosor;
-      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        const primerTrazo = obj.lineas[0];
+        ctx.globalCompositeOperation = primerTrazo.modo === 'borrar' ? 'destination-out' : 'source-over';
+        ctx.strokeStyle = primerTrazo.color;
+        ctx.lineWidth = primerTrazo.grosor;
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
 
-      ctx.beginPath();
-      ctx.moveTo(primerTrazo.x1, primerTrazo.y1);
+        ctx.beginPath();
+        ctx.moveTo(primerTrazo.x1, primerTrazo.y1);
 
-      // Algoritmo Chaikin / Bézier Cuadrático para promediar puntos continuos
-      for (let i = 0; i < obj.lineas.length - 1; i++) {
-        const curr = obj.lineas[i];
-        const next = obj.lineas[i + 1];
+        // Algoritmo Chaikin / Bézier Cuadrático para promediar puntos continuos
+        for (let i = 0; i < obj.lineas.length - 1; i++) {
+          const curr = obj.lineas[i];
+          const next = obj.lineas[i + 1];
 
-        const midX = (curr.x2 + next.x1) / 2;
-        const midY = (curr.y2 + next.y1) / 2;
+          const midX = (curr.x2 + next.x1) / 2;
+          const midY = (curr.y2 + next.y1) / 2;
 
-        ctx.quadraticCurveTo(curr.x2, curr.y2, midX, midY);
+          ctx.quadraticCurveTo(curr.x2, curr.y2, midX, midY);
+        }
+
+        // Conexión del último punto de la cadena vectorial
+        const ultimo = obj.lineas[obj.lineas.length - 1];
+        ctx.lineTo(ultimo.x2, ultimo.y2);
+        ctx.stroke();
+
+        ctx.restore();
+        ctx.globalCompositeOperation = 'source-over';
       }
-
-      // Conexión del último punto de la cadena vectorial
-      const ultimo = obj.lineas[obj.lineas.length - 1];
-      ctx.lineTo(ultimo.x2, ultimo.y2);
-      ctx.stroke();
-
-      ctx.restore();
-      ctx.globalCompositeOperation = 'source-over';
     }
 
     // 4. BORDE DE SELECCIÓN (Aplica a cualquier tipo de objeto o grupo seleccionado)
     if (id === selId) {
+      const drawBounds = id === DRAW_LAYER_ID ? getDrawLayerBounds(obj) : null;
+      const boxX = drawBounds ? drawBounds.x : obj.x;
+      const boxY = drawBounds ? drawBounds.y : obj.y;
+      const boxW = drawBounds ? drawBounds.w : obj.w;
+      const boxH = drawBounds ? drawBounds.h : obj.h;
+
       ctx.strokeStyle = '#7c6cfa';
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 3]);
-      ctx.strokeRect(obj.x - 2, obj.y - 2, obj.w + 4, obj.h + 4);
+      ctx.strokeRect(boxX - 2, boxY - 2, boxW + 4, boxH + 4);
       ctx.setLineDash([]);
 
       // Cuadrado/Handle de redimensionado (esquina inferior derecha)
-      ctx.fillStyle = '#7c6cfa';
-      ctx.fillRect(obj.x + obj.w - 6, obj.y + obj.h - 6, 12, 12);
+      if (id !== DRAW_LAYER_ID) {
+        ctx.fillStyle = '#7c6cfa';
+        ctx.fillRect(boxX + boxW - 6, boxY + boxH - 6, 12, 12);
+      }
     }
   }
 
@@ -427,7 +529,7 @@ function onDown(e) {
 
   if (herramienta === 'select') {
     // ¿Clic en handle de resize?
-    if (selId && objetos[selId]) {
+    if (selId && objetos[selId] && selId !== DRAW_LAYER_ID) {
       const obj = objetos[selId];
       if (pos.x >= obj.x + obj.w - 10 && pos.x <= obj.x + obj.w + 10 &&
           pos.y >= obj.y + obj.h - 10 && pos.y <= obj.y + obj.h + 10) {
@@ -566,38 +668,31 @@ function onMove(e) {
 function onUp() {
   if (pintando && trazoActualLineas.length > 0) {
     guardarEstadoHistorial();
-    // CALCULAMOS los límites fijos AQUÍ, de una sola vez cuando el trazo ya terminó.
-    const xCoords = trazoActualLineas.map(l => [l.x1, l.x2]).flat();
-    const yCoords = trazoActualLineas.map(l => [l.y1, l.y2]).flat();
+    const capaDibujo = objetos[DRAW_LAYER_ID] || {
+      id: DRAW_LAYER_ID,
+      tipo: 'trazo',
+      x: 0,
+      y: 0,
+      w: OVERLAY_W,
+      h: OVERLAY_H,
+      lineas: [],
+      compuesto: true
+    };
 
-    const finalMinX = Math.min(...xCoords);
-    const finalMaxX = Math.max(...xCoords);
-    const finalMinY = Math.min(...yCoords);
-    const finalMaxY = Math.max(...yCoords);
-
-    const w = finalMaxX - finalMinX;
-    const h = finalMaxY - finalMinY;
-
-    // Normalizamos con los valores estáticos recién calculados
-    const lineasNormalizadas = trazoActualLineas.map(l => ({
-      x1: l.x1 - finalMinX,
-      y1: l.y1 - finalMinY,
-      x2: l.x2 - finalMinX,
-      y2: l.y2 - finalMinY,
+    const lineasNuevas = trazoActualLineas.map(l => ({
+      x1: l.x1 - (capaDibujo.x || 0),
+      y1: l.y1 - (capaDibujo.y || 0),
+      x2: l.x2 - (capaDibujo.x || 0),
+      y2: l.y2 - (capaDibujo.y || 0),
       color: l.color,
       grosor: l.grosor,
       modo: l.modo
     }));
 
-    const id = 'stroke_' + Date.now();
     socket.emit('obj-add', {
-      id,
-      tipo: 'trazo',
-      x: finalMinX,
-      y: finalMinY,
-      w: Math.max(10, w),
-      h: Math.max(10, h),
-      lineas: lineasNormalizadas
+      ...capaDibujo,
+      lineas: [...(capaDibujo.lineas || []), ...lineasNuevas],
+      compuesto: true
     });
   }
 
@@ -649,9 +744,11 @@ function hitTest(x, y) {
   // Último objeto encima primero
   const ids = Object.keys(objetos).reverse();
   for (const id of ids) {
+    if (id === DRAW_LAYER_ID) continue;
     const o = objetos[id];
     if (x >= o.x && x <= o.x + o.w && y >= o.y && y <= o.y + o.h) return id;
   }
+  if (hitDrawLayer(x, y)) return DRAW_LAYER_ID;
   return null;
 }
 
@@ -735,7 +832,7 @@ function seleccionarTodo() {
   if (listaObjetos.length === 0) return;
 
   // Filtrar para evitar meter grupos dentro de grupos si ya había uno seleccionado
-  const capturados = listaObjetos.filter(obj => obj.tipo !== 'grupo');
+  const capturados = listaObjetos.filter(obj => obj.tipo !== 'grupo' && obj.id !== DRAW_LAYER_ID);
 
   if (capturados.length === 1) {
     // Si solo hay un objeto en pantalla, lo seleccionamos de forma individual

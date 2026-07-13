@@ -30,6 +30,33 @@ const ctx = canvas.getContext('2d');
 canvas.width = 1920;
 canvas.height = 1080;
 
+function renderLineasCompuestas(lineas, offsetX = 0, offsetY = 0, scaleX = 1, scaleY = 1) {
+  if (!lineas || lineas.length === 0) return;
+
+  let currentMode = null;
+
+  for (const seg of lineas) {
+    const mode = seg.modo === 'borrar' ? 'destination-out' : 'source-over';
+
+    if (mode !== currentMode) {
+      ctx.globalCompositeOperation = mode;
+      currentMode = mode;
+    }
+
+    ctx.strokeStyle = seg.color;
+    ctx.lineWidth = seg.grosor;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    ctx.beginPath();
+    ctx.moveTo(offsetX + (seg.x1 * scaleX), offsetY + (seg.y1 * scaleY));
+    ctx.lineTo(offsetX + (seg.x2 * scaleX), offsetY + (seg.y2 * scaleY));
+    ctx.stroke();
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+}
+
 // Base de datos local de objetos en pantalla
 let objetos = {};
 
@@ -60,36 +87,40 @@ function redraw() {
 
     // 3. DIBUJAR TRAZOS VECTORIALES COMPLETA Y SUAVIZADOS
     else if (obj.tipo === 'trazo' && obj.lineas && obj.lineas.length > 0) {
-      ctx.save();
-      ctx.translate(obj.x, obj.y);
+      if (obj.compuesto || (obj.id && obj.id === 'draw_layer_main')) {
+        renderLineasCompuestas(obj.lineas, obj.x || 0, obj.y || 0);
+      } else {
+        ctx.save();
+        ctx.translate(obj.x, obj.y);
 
-      let origW = obj.lineas.reduce((max, l) => Math.max(max, l.x1, l.x2), 10);
-      let origH = obj.lineas.reduce((max, l) => Math.max(max, l.y1, l.y2), 10);
-      ctx.scale(obj.w / origW, obj.h / origH);
+        let origW = obj.lineas.reduce((max, l) => Math.max(max, l.x1, l.x2), 10);
+        let origH = obj.lineas.reduce((max, l) => Math.max(max, l.y1, l.y2), 10);
+        ctx.scale(obj.w / origW, obj.h / origH);
 
-      const primerTrazo = obj.lineas[0];
-      ctx.globalCompositeOperation = primerTrazo.modo === 'borrar' ? 'destination-out' : 'source-over';
-      ctx.strokeStyle = primerTrazo.color;
-      ctx.lineWidth = primerTrazo.grosor;
-      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        const primerTrazo = obj.lineas[0];
+        ctx.globalCompositeOperation = primerTrazo.modo === 'borrar' ? 'destination-out' : 'source-over';
+        ctx.strokeStyle = primerTrazo.color;
+        ctx.lineWidth = primerTrazo.grosor;
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
 
-      ctx.beginPath();
-      ctx.moveTo(primerTrazo.x1, primerTrazo.y1);
+        ctx.beginPath();
+        ctx.moveTo(primerTrazo.x1, primerTrazo.y1);
 
-      for (let i = 0; i < obj.lineas.length - 1; i++) {
-        const curr = obj.lineas[i];
-        const next = obj.lineas[i + 1];
-        const midX = (curr.x2 + next.x1) / 2;
-        const midY = (curr.y2 + next.y1) / 2;
-        ctx.quadraticCurveTo(curr.x2, curr.y2, midX, midY);
+        for (let i = 0; i < obj.lineas.length - 1; i++) {
+          const curr = obj.lineas[i];
+          const next = obj.lineas[i + 1];
+          const midX = (curr.x2 + next.x1) / 2;
+          const midY = (curr.y2 + next.y1) / 2;
+          ctx.quadraticCurveTo(curr.x2, curr.y2, midX, midY);
+        }
+
+        const ultimo = obj.lineas[obj.lineas.length - 1];
+        ctx.lineTo(ultimo.x2, ultimo.y2);
+        ctx.stroke();
+
+        ctx.restore();
+        ctx.globalCompositeOperation = 'source-over';
       }
-
-      const ultimo = obj.lineas[obj.lineas.length - 1];
-      ctx.lineTo(ultimo.x2, ultimo.y2);
-      ctx.stroke();
-
-      ctx.restore();
-      ctx.globalCompositeOperation = 'source-over';
     }
   }
 }
