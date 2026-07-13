@@ -2,38 +2,43 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>DrawCast - Login</title>
-<style>
-  body {
-    margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: #161616; color: #e2e2f0; font-family: 'Segoe UI', system-ui, sans-serif;
-  }
-  .login-card {
-    background: #1a1a1a; padding: 30px; border-radius: 12px; border: 1px solid #2c2c2c;
-    width: 320px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-  }
-  h2 { margin-bottom: 20px; font-size: 20px; color: #ffa755; }
-  input[type="password"] {
-    width: 100%; padding: 10px; background: #141414; border: 1px solid #2c2c2c;
-    border-radius: 8px; color: #fff; text-align: center; font-size: 16px; margin-bottom: 15px;
-    box-sizing: border-box; outline: none; transition: border-color 0.2s;
-  }
-  input[type="password"]:focus { border-color: #ffa755; }
-  button {
-    width: 100%; padding: 10px; border: none; background: #ffa755; color: #fff;
-    font-size: 14px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: background 0.2s;
-  }
-  button:hover { background: #e59344; }
-  #error-msg { color: #f87171; font-size: 12px; margin-top: 10px; min-height: 18px; }
-</style>
+<title>DrawCast - Terminal Access</title>
+<link rel="stylesheet" href="style/main.css">
 </head>
-<body>
+<body class="login-page">
 
-<div class="login-card">
-  <h2>DrawCast <span style="color: #ffffff;">DannDato</span></h2>
-  <input type="password" id="pass-input" placeholder="Introduce la contraseña" autofocus>
-  <button onclick="intentarLogin()">Entrar</button>
-  <div id="error-msg"></div>
+<div class="terminal-wrapper">
+  <div class="terminal-header">
+    <span class="header-left">DANNPROD // </span>
+    <span class="header-right">v1.0.9</span>
+  </div>
+
+  <div class="login-card">
+    <div class="title-container">
+      <span class="lock-icon">🔒</span>
+      <h2>ACCESO RESTRINGIDO</h2>
+    </div>
+    <div class="subtitle">Se requiere identificación para operaciones de transmisión.</div>
+    
+    <div class="input-label">CONTRASEÑA DE ACCESO</div>
+    <input type="password" id="pass-input" placeholder="••••••••••••" autofocus>
+    
+    <button class="btn-authorize" onclick="intentarLogin()">
+      AUTORIZAR 🛡️
+    </button>
+    
+    <div class="card-footer">
+      <span>ENCRIPTACIÓN: Activa</span>
+      <span>Setvidor: daserv</span>
+    </div>
+
+    <div id="error-msg"></div>
+  </div>
+
+  <!-- <div class="external-buttons">
+    <button class="btn-secondary">📋 RECOVERY</button>
+    <button class="btn-secondary">🌐 NETWORK</button>
+  </div> -->
 </div>
 
 <script>
@@ -50,13 +55,12 @@ async function intentarLogin() {
 
   const data = await res.json();
   if (res.ok && data.ok) {
-    window.location.href = '/control'; // Redirección exitosa
+    window.location.href = '/control'; 
   } else {
-    errorEl.textContent = data.error || "Error al conectar";
+    errorEl.textContent = data.error || "ERR: ACCESS DENIED";
   }
 }
 
-// Permitir entrar presionando Enter
 document.getElementById('pass-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') intentarLogin();
 });

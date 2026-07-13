@@ -3,22 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <title>Overlay Transparent</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    width: 1920px; height: 1080px;
-    overflow: hidden;
-    background: transparent;
-    font-family: 'Segoe UI', sans-serif;
-  }
-  #canvas-dibujo {
-    position: absolute; top: 0; left: 0;
-    width: 1920px; height: 1080px;
-    pointer-events: none;
-  }
-</style>
+<link rel="stylesheet" href="style/main.css">
 </head>
-<body>
+<body class="overlay-page">
 
 <canvas id="canvas-dibujo"></canvas>
 
@@ -60,13 +47,22 @@ function renderLineasCompuestas(lineas, offsetX = 0, offsetY = 0, scaleX = 1, sc
 // Base de datos local de objetos en pantalla
 let objetos = {};
 
+function getOrderedObjectEntries() {
+  return Object.entries(objetos).sort(([, a], [, b]) => {
+    const za = typeof a.zIndex === 'number' ? a.zIndex : 0;
+    const zb = typeof b.zIndex === 'number' ? b.zIndex : 0;
+    return za - zb;
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MOTOR DE REDRAW (Dibuja todo con curvas y capas en OBS)
 // ═══════════════════════════════════════════════════════════════════════════
 function redraw() {
   ctx.clearRect(0, 0, 1920, 1080);
 
-  for (const [id, obj] of Object.entries(objetos)) {
+  for (const [id, obj] of getOrderedObjectEntries()) {
+    if (obj.hidden) continue;
 
     // 1. DIBUJAR IMÁGENES
     if (obj.tipo === 'imagen' && obj._img) {
@@ -87,7 +83,7 @@ function redraw() {
 
     // 3. DIBUJAR TRAZOS VECTORIALES COMPLETA Y SUAVIZADOS
     else if (obj.tipo === 'trazo' && obj.lineas && obj.lineas.length > 0) {
-      if (obj.compuesto || (obj.id && obj.id === 'draw_layer_main')) {
+      if (obj.compuesto) {
         renderLineasCompuestas(obj.lineas, obj.x || 0, obj.y || 0);
       } else {
         ctx.save();

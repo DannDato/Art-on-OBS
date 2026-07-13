@@ -28,6 +28,11 @@ La arquitectura del sistema aísla la lógica del disco, enrutamiento, flujos de
 │   └── authenticate.js     # Guardián de seguridad perimetral (Control de sesiones)
 ├── public/
 │   ├── img/                # Recursos gráficos fijos (Canva Guides base)
+│   ├── js/
+│   │   └── control/
+│   │       ├── state.js    # Estado global y configuración del panel
+│   │       ├── render.js   # Motor de render y utilidades geométricas
+│   │       └── actions.js  # Eventos UI, atajos, sockets y acciones
 │   ├── style/
 │   │   └── main.css        # Estilos globales unificados del ecosistema
 │   ├── control.html        # Panel de operaciones del streamer con canvas avanzado
