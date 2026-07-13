@@ -16,14 +16,22 @@ socket.on('obj-add', (d) => {
     img.onload = () => {
       payload._img = img;
       objetos[payload.id] = payload;
-      if (payload.hidden && selId === payload.id) selId = null;
+      if (payload.hidden && selectedLayerIds.has(payload.id)) selectedLayerIds.delete(payload.id);
+      if (selId && !selectedLayerIds.has(selId)) {
+        const first = selectedLayerIds.values().next();
+        selId = first.done ? null : first.value;
+      }
       if (isDrawLayer(payload) && !activeDrawLayerId) activeDrawLayerId = payload.id;
       renderLayersPanel();
       redraw();
     };
   } else {
     objetos[payload.id] = payload;
-    if (payload.hidden && selId === payload.id) selId = null;
+    if (payload.hidden && selectedLayerIds.has(payload.id)) selectedLayerIds.delete(payload.id);
+    if (selId && !selectedLayerIds.has(selId)) {
+      const first = selectedLayerIds.values().next();
+      selId = first.done ? null : first.value;
+    }
     if (isDrawLayer(payload) && !activeDrawLayerId) activeDrawLayerId = payload.id;
     renderLayersPanel();
     redraw();
@@ -49,7 +57,11 @@ socket.on('obj-resize', ({ id, x, y, w, h }) => {
 
 socket.on('obj-remove', ({ id }) => {
   delete objetos[id];
-  if (selId === id) selId = null;
+  if (selectedLayerIds.has(id)) selectedLayerIds.delete(id);
+  if (selId === id || (selId && !selectedLayerIds.has(selId))) {
+    const first = selectedLayerIds.values().next();
+    selId = first.done ? null : first.value;
+  }
   ensureDefaultDrawLayer();
   renderLayersPanel();
   redraw();
@@ -57,7 +69,7 @@ socket.on('obj-remove', ({ id }) => {
 
 socket.on('limpiar-todo', () => {
   objetos = {};
-  selId = null;
+  setSelection([], null);
   ensureDefaultDrawLayer();
   renderLayersPanel();
   redraw();
@@ -138,6 +150,8 @@ function ensureDefaultDrawLayer() {
 }
 
 function getLayerItems() {
+  const drawLayersCount = Object.values(objetos).filter((obj) => isDrawLayer(obj)).length;
+
   return Object.entries(objetos)
     .filter(([, obj]) => obj.tipo === 'imagen' || obj.tipo === 'texto' || isDrawLayer(obj))
     .map(([id, obj], idx) => {
@@ -153,15 +167,121 @@ function getLayerItems() {
         zIndex: typeof obj.zIndex === 'number' ? obj.zIndex : 0,
         hidden: !!obj.hidden,
         name: obj.layerName || fallbackName,
-        isDraw: isDrawLayer(obj)
+        isDraw: isDrawLayer(obj),
+        isLocked: isDrawLayer(obj) && drawLayersCount <= 1
       };
     })
     .sort((a, b) => b.zIndex - a.zIndex);
 }
 
+function animateLayerReorder(root, beforeRects) {
+  if (!beforeRects || beforeRects.size === 0) return;
+
+  const rows = root.querySelectorAll('.layer-item');
+  rows.forEach((row) => {
+    const id = row.dataset.layerId;
+    const prev = beforeRects.get(id);
+    if (!prev) return;
+
+    const next = row.getBoundingClientRect();
+    const deltaY = prev.top - next.top;
+    if (Math.abs(deltaY) < 1) return;
+
+    row.style.transform = `translateY(${deltaY}px)`;
+    row.classList.add('is-reordering');
+
+    requestAnimationFrame(() => {
+      row.style.transform = '';
+      const onEnd = () => {
+        row.classList.remove('is-reordering');
+        row.removeEventListener('transitionend', onEnd);
+      };
+      row.addEventListener('transitionend', onEnd);
+    });
+  });
+}
+
+const LAYERS_VIEW_MODE_KEY = 'drawcast.layers.view.mode';
+let isLayersCompact = false;
+
+function applyLayersViewMode() {
+  const panel = document.getElementById('props-layers');
+  const toggleBtn = document.getElementById('layers-density-toggle');
+  if (!panel || !toggleBtn) return;
+
+  panel.classList.toggle('is-compact', isLayersCompact);
+  toggleBtn.textContent = isLayersCompact ? 'MODO: COMPACTO' : 'MODO: AMPLIO';
+  toggleBtn.setAttribute('aria-pressed', isLayersCompact ? 'true' : 'false');
+}
+
+function initLayersViewMode() {
+  try {
+    isLayersCompact = localStorage.getItem(LAYERS_VIEW_MODE_KEY) === 'compact';
+  } catch (_) {
+    isLayersCompact = false;
+  }
+  applyLayersViewMode();
+}
+
+function toggleLayersViewMode() {
+  isLayersCompact = !isLayersCompact;
+  try {
+    localStorage.setItem(LAYERS_VIEW_MODE_KEY, isLayersCompact ? 'compact' : 'expanded');
+  } catch (_) {
+    // Keep working even if storage is blocked.
+  }
+  applyLayersViewMode();
+  renderLayersPanel();
+}
+
+let selectedLayerIds = new Set();
+
+function getSelectedLayerIds() {
+  if (selectedLayerIds.size > 0) return Array.from(selectedLayerIds).filter((id) => !!objetos[id]);
+  return selId && objetos[selId] ? [selId] : [];
+}
+
+function setSelection(ids = [], primaryId = null) {
+  selectedLayerIds = new Set(ids.filter((id) => !!objetos[id]));
+
+  if (primaryId && selectedLayerIds.has(primaryId)) {
+    selId = primaryId;
+  } else {
+    const first = selectedLayerIds.values().next();
+    selId = first.done ? null : first.value;
+  }
+
+  if (selId && isDrawLayer(objetos[selId])) {
+    activeDrawLayerId = selId;
+  }
+
+  document.getElementById('props-select').style.display = (herramienta === 'select' && selectedLayerIds.size > 0) ? '' : 'none';
+}
+
+function getSelectableBounds(obj) {
+  if (!obj || obj.hidden) return null;
+  if (isDrawLayer(obj)) return getDrawLayerBounds(obj);
+  if (typeof obj.x === 'number' && typeof obj.y === 'number' && typeof obj.w === 'number' && typeof obj.h === 'number') {
+    return { x: obj.x, y: obj.y, w: obj.w, h: obj.h };
+  }
+  return null;
+}
+
+function boundsOverlap(a, b) {
+  return a.x < (b.x + b.w) &&
+    (a.x + a.w) > b.x &&
+    a.y < (b.y + b.h) &&
+    (a.y + a.h) > b.y;
+}
+
 function renderLayersPanel() {
   const root = document.getElementById('layers-list');
   if (!root) return;
+
+  const beforeRects = new Map();
+  root.querySelectorAll('.layer-item').forEach((row) => {
+    beforeRects.set(row.dataset.layerId, row.getBoundingClientRect());
+  });
 
   const items = getLayerItems();
   if (items.length === 0) {
@@ -173,9 +293,11 @@ function renderLayersPanel() {
     const layerType = layer.isDraw ? 'DRAWING' : layer.tipo.toUpperCase();
     const layerIcon = layer.isDraw ? '✎' : layer.tipo === 'texto' ? 'T' : '▦';
     const layerIndex = String(items.length - index).padStart(2, '0');
+    const visibilityBadge = `<span class="layer-badge ${layer.hidden ? 'hidden' : 'visible'}">${layer.hidden ? 'HIDDEN' : 'VISIBLE'}</span>`;
+    const lockBadge = layer.isLocked ? '<span class="layer-badge locked">LOCKED</span>' : '';
 
     return `
-      <div class="layer-item ${selId === layer.id ? 'is-selected' : ''} ${layer.hidden ? 'is-hidden' : ''}" data-layer-id="${layer.id}" draggable="true">
+      <div class="layer-item ${selectedLayerIds.has(layer.id) ? 'is-selected' : ''} ${layer.hidden ? 'is-hidden' : ''}" data-layer-id="${layer.id}" draggable="true">
         <div class="layer-grip" title="Arrastrar para reordenar">⋮⋮</div>
         <div class="layer-type-icon ${layer.isDraw ? 'is-draw' : layer.tipo === 'texto' ? 'is-text' : 'is-image'}" aria-hidden="true">${layerIcon}</div>
         <div class="layer-meta">
@@ -184,6 +306,7 @@ function renderLayersPanel() {
             <span class="layer-type">${layerType}</span>
           </div>
           <div class="layer-name" title="${escapeHtml(layer.name)}">${escapeHtml(layer.name)}</div>
+          <div class="layer-badges">${visibilityBadge}${lockBadge}</div>
         </div>
         <div class="layer-actions">
           <button class="layer-btn" data-action="toggle" data-layer-id="${layer.id}" title="Mostrar/Ocultar">${layer.hidden ? '◌' : '◉'}</button>
@@ -192,16 +315,32 @@ function renderLayersPanel() {
       </div>
     `;
   }).join('');
+
+  animateLayerReorder(root, beforeRects);
 }
 
-function selectLayer(layerId) {
+function selectLayer(layerId, options = {}) {
+  const { append = false } = options;
   if (!objetos[layerId]) return;
-  selId = layerId;
-  if (herramienta !== 'select') setTool('select');
-  if (isDrawLayer(objetos[layerId])) {
-    activeDrawLayerId = layerId;
+
+  if (append) {
+    if (selectedLayerIds.has(layerId) && selectedLayerIds.size > 1) {
+      selectedLayerIds.delete(layerId);
+      const first = selectedLayerIds.values().next();
+      selId = first.done ? null : first.value;
+    } else {
+      selectedLayerIds.add(layerId);
+      selId = layerId;
+    }
+  } else {
+    setSelection([layerId], layerId);
   }
-  document.getElementById('props-select').style.display = '';
+
+  if (herramienta !== 'select') setTool('select');
+  if (selId && isDrawLayer(objetos[selId])) {
+    activeDrawLayerId = selId;
+  }
+  document.getElementById('props-select').style.display = (herramienta === 'select' && selectedLayerIds.size > 0) ? '' : 'none';
   renderLayersPanel();
   redraw();
 }
@@ -268,7 +407,8 @@ function confirmarAccion({
   });
 }
 
-async function deleteLayer(layerId) {
+async function deleteLayer(layerId, options = {}) {
+  const { skipConfirm = false } = options;
   const obj = objetos[layerId];
   if (!obj) return 'cancelled';
 
@@ -281,13 +421,15 @@ async function deleteLayer(layerId) {
     }
   }
 
-  const confirmed = await confirmarAccion({
-    title: 'Eliminar capa',
-    message: 'Seguro que quieres eliminar esto? Esta accion no se puede deshacer.',
-    confirmText: 'Eliminar',
-    cancelText: 'Cancelar'
-  });
-  if (!confirmed) return 'cancelled';
+  if (!skipConfirm) {
+    const confirmed = await confirmarAccion({
+      title: 'Eliminar capa',
+      message: 'Seguro que quieres eliminar esto? Esta accion no se puede deshacer.',
+      confirmText: 'Eliminar',
+      cancelText: 'Cancelar'
+    });
+    if (!confirmed) return 'cancelled';
+  }
 
   socket.emit('obj-remove', { id: layerId, url: obj.url, tipo: obj.tipo });
   if (activeDrawLayerId === layerId) {
@@ -301,7 +443,7 @@ function crearNuevaCapaDibujo() {
   const layer = buildDrawLayer();
   activeDrawLayerId = layer.id;
   objetos[layer.id] = layer;
-  selId = layer.id;
+  setSelection([layer.id], layer.id);
   socket.emit('obj-add', layer);
   toast('🧩 Nueva capa de dibujo creada');
   renderLayersPanel();
@@ -309,6 +451,7 @@ function crearNuevaCapaDibujo() {
 }
 
 let draggingLayerId = null;
+let dragSelectionSnapshot = null;
 
 function reorderLayers(draggedId, targetId) {
   if (!draggedId || !targetId || draggedId === targetId) return;
@@ -353,7 +496,7 @@ function setTool(t) {
 
   document.getElementById('props-draw').style.display = (t === 'draw' || t === 'eraser') ? '' : 'none';
   document.getElementById('props-text').style.display = t === 'text' ? '' : 'none';
-  document.getElementById('props-select').style.display = (t === 'select' && selId) ? '' : 'none';
+  document.getElementById('props-select').style.display = (t === 'select' && selectedLayerIds.size > 0) ? '' : 'none';
 
   if (t !== 'select') deseleccionar();
   cerrarTextInput();
@@ -411,60 +554,56 @@ function cerrarTextInput() {
 }
 
 function seleccionarTodo() {
-  const listaObjetos = Object.values(objetos);
-  if (listaObjetos.length === 0) return;
+  const capturados = getLayerItems().filter((layer) => !layer.hidden).map((layer) => layer.id);
+  if (capturados.length === 0) return;
 
-  const capturados = listaObjetos.filter((obj) => obj.tipo !== 'grupo' && !isDrawLayer(obj));
-
-  if (capturados.length === 1) {
-    selId = capturados[0].id;
-    document.getElementById('props-select').style.display = '';
-    toast('✨ Objeto seleccionado');
-  } else if (capturados.length > 1) {
-    const gMinX = Math.min(...capturados.map((o) => o.x));
-    const gMaxX = Math.max(...capturados.map((o) => o.x + o.w));
-    const gMinY = Math.min(...capturados.map((o) => o.y));
-    const gMaxY = Math.max(...capturados.map((o) => o.y + o.h));
-
-    const grupoId = 'group_' + Date.now();
-    socket.emit('obj-add', {
-      id: grupoId,
-      tipo: 'grupo',
-      x: gMinX,
-      y: gMinY,
-      w: gMaxX - gMinX,
-      h: gMaxY - gMinY,
-      hijos: capturados
-    });
-
-    selId = grupoId;
-    document.getElementById('props-select').style.display = '';
-    toast(`✨ ${capturados.length} objetos agrupados y seleccionados`);
-  }
+  setSelection(capturados, capturados[0]);
+  toast(capturados.length === 1 ? '✨ Capa seleccionada' : `✨ ${capturados.length} capas seleccionadas`);
 
   renderLayersPanel();
   redraw();
 }
 
 function deseleccionar() {
-  selId = null;
-  document.getElementById('props-select').style.display = 'none';
+  setSelection([], null);
   renderLayersPanel();
   redraw();
 }
 
 async function eliminarSeleccionado() {
-  if (!selId) return;
+  const selectedIds = getSelectedLayerIds();
+  if (selectedIds.length === 0) return;
   guardarEstadoHistorial();
 
-  const obj = objetos[selId];
-  if (obj.tipo === 'grupo' && obj.hijos) {
-    obj.hijos.forEach((hijo) => {
-      socket.emit('obj-remove', { id: hijo.id, url: hijo.url, tipo: hijo.tipo });
+  if (selectedIds.length > 1) {
+    const confirmed = await confirmarAccion({
+      title: 'Eliminar capas',
+      message: `Seguro que quieres eliminar ${selectedIds.length} capas? Esta accion no se puede deshacer.`,
+      confirmText: 'Eliminar',
+      cancelText: 'Cancelar'
     });
+    if (!confirmed) return;
+
+    let deletedCount = 0;
+    let clearedCount = 0;
+    for (const id of selectedIds) {
+      const result = await deleteLayer(id, { skipConfirm: true });
+      if (result === 'deleted') deletedCount += 1;
+      if (result === 'cleared') clearedCount += 1;
+    }
+    setSelection([], null);
+
+    if (deletedCount > 0 && clearedCount > 0) {
+      toast(`🗑️ ${deletedCount} capas eliminadas • ${clearedCount} capa vaciada`);
+    } else if (deletedCount > 0) {
+      toast(`🗑️ ${deletedCount} capas eliminadas`);
+    } else if (clearedCount > 0) {
+      toast(`🧹 ${clearedCount} capa de dibujo vaciada`);
+    }
+    return;
   }
 
-  const result = await deleteLayer(selId);
+  const result = await deleteLayer(selectedIds[0]);
   if (result === 'deleted') toast('🗑️ Capa eliminada');
   if (result === 'cleared') toast('🧹 Ultima capa de dibujo vaciada');
 }
@@ -588,12 +727,29 @@ function onDown(e) {
     const hit = hitTest(pos.x, pos.y);
     if (hit) {
       guardarEstadoHistorial();
-      selId = hit;
+      if (selectedLayerIds.has(hit) && selectedLayerIds.size > 1) {
+        selId = hit;
+      } else {
+        setSelection([hit], hit);
+      }
       if (isDrawLayer(objetos[hit])) activeDrawLayerId = hit;
       dragging = true;
       dragOffX = pos.x - objetos[hit].x;
       dragOffY = pos.y - objetos[hit].y;
-      document.getElementById('props-select').style.display = '';
+
+      const dragIds = getSelectedLayerIds();
+      if (dragIds.length > 1 && dragIds.includes(hit)) {
+        dragSelectionSnapshot = {
+          startPointer: { x: pos.x, y: pos.y },
+          items: dragIds
+            .filter((id) => objetos[id] && typeof objetos[id].x === 'number' && typeof objetos[id].y === 'number')
+            .map((id) => ({ id, x: objetos[id].x, y: objetos[id].y }))
+        };
+      } else {
+        dragSelectionSnapshot = null;
+      }
+
+      document.getElementById('props-select').style.display = (herramienta === 'select' && selectedLayerIds.size > 0) ? '' : 'none';
       renderLayersPanel();
     } else {
       deseleccionar();
@@ -657,6 +813,26 @@ function onMove(e) {
   }
 
   if (dragging && selId && objetos[selId]) {
+    if (dragSelectionSnapshot && dragSelectionSnapshot.items.length > 1) {
+      const dx = pos.x - dragSelectionSnapshot.startPointer.x;
+      const dy = pos.y - dragSelectionSnapshot.startPointer.y;
+
+      dragSelectionSnapshot.items.forEach((item) => {
+        const obj = objetos[item.id];
+        if (!obj) return;
+        const nx = item.x + dx;
+        const ny = item.y + dy;
+        if (obj.x === nx && obj.y === ny) return;
+
+        obj.x = nx;
+        obj.y = ny;
+        socket.emit('obj-move', { id: item.id, x: nx, y: ny });
+      });
+
+      redraw();
+      return;
+    }
+
     const nx = pos.x - dragOffX;
     const ny = pos.y - dragOffY;
 
@@ -733,45 +909,37 @@ function onUp() {
 
   if (selectingArea) {
     selectingArea = false;
-    const xMin = Math.min(selAreaStart.x, selAreaEnd.x);
-    const xMax = Math.max(selAreaStart.x, selAreaEnd.x);
-    const yMin = Math.min(selAreaStart.y, selAreaEnd.y);
-    const yMax = Math.max(selAreaStart.y, selAreaEnd.y);
+    const area = {
+      x: Math.min(selAreaStart.x, selAreaEnd.x),
+      y: Math.min(selAreaStart.y, selAreaEnd.y),
+      w: Math.max(1, Math.abs(selAreaEnd.x - selAreaStart.x)),
+      h: Math.max(1, Math.abs(selAreaEnd.y - selAreaStart.y))
+    };
 
-    const capturados = [];
-    for (const [, obj] of Object.entries(objetos)) {
-      if (obj.tipo === 'grupo' || isDrawLayer(obj) || obj.hidden) continue;
-      const centerXX = obj.x + (obj.w / 2);
-      const centerYY = obj.y + (obj.h / 2);
-      if (centerXX >= xMin && centerXX <= xMax && centerYY >= yMin && centerYY <= yMax) {
-        capturados.push(obj);
-      }
-    }
+    const capturados = getOrderedObjectEntries()
+      .filter(([, obj]) => obj.tipo !== 'grupo' && !obj.hidden)
+      .filter(([, obj]) => {
+        const bounds = getSelectableBounds(obj);
+        return bounds && boundsOverlap(area, bounds);
+      })
+      .sort(([, a], [, b]) => {
+        const za = typeof a.zIndex === 'number' ? a.zIndex : 0;
+        const zb = typeof b.zIndex === 'number' ? b.zIndex : 0;
+        return zb - za;
+      })
+      .map(([id]) => id);
 
-    if (capturados.length > 1) {
-      const gMinX = Math.min(...capturados.map((o) => o.x));
-      const gMaxX = Math.max(...capturados.map((o) => o.x + o.w));
-      const gMinY = Math.min(...capturados.map((o) => o.y));
-      const gMaxY = Math.max(...capturados.map((o) => o.y + o.h));
-
-      const grupoId = 'group_' + Date.now();
-      socket.emit('obj-add', {
-        id: grupoId,
-        tipo: 'grupo',
-        x: gMinX,
-        y: gMinY,
-        w: gMaxX - gMinX,
-        h: gMaxY - gMinY,
-        hijos: capturados
-      });
-
-      selId = grupoId;
-      document.getElementById('props-select').style.display = '';
+    if (capturados.length > 0) {
+      setSelection(capturados, capturados[0]);
+      toast(capturados.length === 1 ? '✨ Capa seleccionada' : `✨ ${capturados.length} capas seleccionadas`);
+    } else {
+      setSelection([], null);
     }
   }
 
   pintando = false;
   dragging = false;
+  dragSelectionSnapshot = null;
   resizing = false;
   renderLayersPanel();
   redraw();
@@ -887,13 +1055,18 @@ if (layersListEl) {
     const layerRow = e.target.closest('.layer-item');
     if (!layerRow) return;
     const layerId = layerRow.dataset.layerId;
-    if (layerId) selectLayer(layerId);
+    if (layerId) selectLayer(layerId, { append: e.shiftKey });
   });
 }
 
 const createLayerBtn = document.getElementById('create-draw-layer-btn');
 if (createLayerBtn) {
   createLayerBtn.addEventListener('click', crearNuevaCapaDibujo);
+}
+
+const layersDensityBtn = document.getElementById('layers-density-toggle');
+if (layersDensityBtn) {
+  layersDensityBtn.addEventListener('click', toggleLayersViewMode);
 }
 
 dropZone.addEventListener('dragover', (e) => {
@@ -992,6 +1165,7 @@ document.getElementById('draw-size').addEventListener('input', function() {
 
 window.addEventListener('resize', fitCanvas);
 fitCanvas();
+initLayersViewMode();
 ensureDefaultDrawLayer();
 renderLayersPanel();
 setTool('select');

@@ -188,21 +188,22 @@ function redraw() {
       }
     }
 
-    if (id === selId) {
+    const isMultiSelected = typeof selectedLayerIds !== 'undefined' && selectedLayerIds && selectedLayerIds.has && selectedLayerIds.has(id);
+    if (id === selId || isMultiSelected) {
       const drawBounds = isDrawLayer(obj) ? getDrawLayerBounds(obj) : null;
       const boxX = drawBounds ? drawBounds.x : obj.x;
       const boxY = drawBounds ? drawBounds.y : obj.y;
       const boxW = drawBounds ? drawBounds.w : obj.w;
       const boxH = drawBounds ? drawBounds.h : obj.h;
 
-      ctx.strokeStyle = '#7c6cfa';
+      ctx.strokeStyle = id === selId ? '#07e2ff' : 'rgba(7, 226, 255, 0.6)';
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 3]);
       ctx.strokeRect(boxX - 2, boxY - 2, boxW + 4, boxH + 4);
       ctx.setLineDash([]);
 
-      if (!isDrawLayer(obj)) {
-        ctx.fillStyle = '#7c6cfa';
+      if (id === selId && !isDrawLayer(obj)) {
+        ctx.fillStyle = '#07e2ff';
         ctx.fillRect(boxX + boxW - 6, boxY + boxH - 6, 12, 12);
       }
     }
