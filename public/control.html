@@ -30,6 +30,16 @@
     </svg>
     <span class="tip">DRAW // PENCIL</span>
   </button>
+
+  <button class="tool-btn" id="tool-shape" onclick="setTool('shape')">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+      <rect x="3" y="3" width="7" height="7" stroke="currentColor" stroke-width="1.6"/>
+      <circle cx="16.5" cy="7" r="3.5" stroke="currentColor" stroke-width="1.6"/>
+      <path d="M4 20h8L8 13 4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="m17 13 1.37 2.77L21 16.15l-2 1.95.47 2.75L17 19.4l-2.47 1.45.47-2.75-2-1.95 2.63-.38L17 13Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+    </svg>
+    <span class="tip">SHAPES</span>
+  </button>
   
   <button class="tool-btn" id="tool-eraser" onclick="setTool('eraser')">
     <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24">
@@ -126,6 +136,37 @@
     <div class="prop-row">
       <label>TAMAÑO</label>
       <input type="number" id="text-size" value="56" min="12" max="200">
+    </div>
+  </div>
+
+  <div id="props-shape" class="prop-group">
+    <h2>[02B] FORMAS</h2>
+    <div class="prop-row">
+      <label>TIPO</label>
+      <select id="shape-type">
+        <option value="square">Cuadrado</option>
+        <option value="circle">Circulo</option>
+        <option value="triangle">Triangulo</option>
+        <option value="star">Estrella</option>
+      </select>
+    </div>
+    <div class="prop-row">
+      <label>RELLENO</label>
+      <input type="color" id="shape-fill-color" value="#ffffff">
+    </div>
+    <div class="prop-row">
+      <label>BORDE</label>
+      <input type="color" id="shape-stroke-color" value="#07e2ff">
+    </div>
+    <div class="prop-row">
+      <label>GROSOR BORDE</label>
+      <input type="range" id="shape-stroke-size" min="0" max="24" value="4">
+      <span id="shape-stroke-val">4</span>
+    </div>
+    <div class="prop-row">
+      <label>BORDER-RADIUS</label>
+      <input type="range" id="shape-radius" min="0" max="200" value="0">
+      <span id="shape-radius-val">0</span>
     </div>
   </div>
 

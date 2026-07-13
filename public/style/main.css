@@ -282,6 +282,10 @@ body.control-page #props-select {
   display: none;
 }
 
+body.control-page #props-shape {
+  display: none;
+}
+
 body.control-page .prop-row {
   display: flex;
   align-items: center;
@@ -311,12 +315,28 @@ body.control-page input[type='color']::-webkit-color-swatch-wrapper { padding: 0
 body.control-page input[type='color']::-webkit-color-swatch { border: none; }
 
 body.control-page input[type='number'],
-body.control-page input[type='range'] {
+body.control-page input[type='range'],
+body.control-page select {
   background: var(--color-input);
   border: 1px solid var(--color-border);
   color: var(--color-white);
   padding: 4px 6px;
   outline: none;
+}
+
+body.control-page select {
+  min-width: 115px;
+  cursor: pointer;
+}
+
+body.control-page #shape-stroke-val {
+  min-width: 24px;
+  color: var(--color-muted);
+}
+
+body.control-page #shape-radius-val {
+  min-width: 24px;
+  color: var(--color-muted);
 }
 
 body.control-page #text-size {
@@ -516,6 +536,10 @@ body.control-page .layer-type-icon.is-draw {
 }
 
 body.control-page .layer-type-icon.is-text {
+  color: var(--color-accent);
+}
+
+body.control-page .layer-type-icon.is-shape {
   color: var(--color-accent);
 }
 

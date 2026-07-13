@@ -1,4 +1,24 @@
 // Eventos de sockets
+if (typeof window.isDrawLayer !== 'function') {
+  window.isDrawLayer = (obj) => obj && obj.tipo === 'trazo' && obj.compuesto;
+}
+
+if (typeof window.redraw !== 'function') {
+  window.redraw = () => {};
+}
+
+if (typeof window.hitTest !== 'function') {
+  window.hitTest = () => null;
+}
+
+if (typeof window.getDrawLayerBounds !== 'function') {
+  window.getDrawLayerBounds = () => null;
+}
+
+if (typeof window.getOrderedObjectEntries !== 'function') {
+  window.getOrderedObjectEntries = () => Object.entries(objetos || {});
+}
+
 socket.on('connect', () => {
   document.getElementById('status').classList.remove('off');
 });
@@ -108,6 +128,13 @@ function getTextLayerName(text) {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+function getShapeLabel(shapeType) {
+  if (shapeType === 'circle') return 'CIRCULO';
+  if (shapeType === 'triangle') return 'TRIANGULO';
+  if (shapeType === 'star') return 'ESTRELLA';
+  return 'CUADRADO';
+}
+
 function escapeHtml(text) {
   return String(text)
     .replace(/&/g, '&amp;')
@@ -153,12 +180,14 @@ function getLayerItems() {
   const drawLayersCount = Object.values(objetos).filter((obj) => isDrawLayer(obj)).length;
 
   return Object.entries(objetos)
-    .filter(([, obj]) => obj.tipo === 'imagen' || obj.tipo === 'texto' || isDrawLayer(obj))
+    .filter(([, obj]) => obj.tipo === 'imagen' || obj.tipo === 'texto' || obj.tipo === 'forma' || isDrawLayer(obj))
     .map(([id, obj], idx) => {
       const fallbackName = obj.tipo === 'imagen'
         ? (obj.fileName || `IMAGEN ${idx + 1}`)
         : obj.tipo === 'texto'
           ? (getTextLayerName(obj.texto) || `TEXTO ${idx + 1}`)
+          : obj.tipo === 'forma'
+            ? `${getShapeLabel(obj.shapeType)} ${idx + 1}`
           : `DIBUJO ${idx + 1}`;
 
       return {
@@ -255,7 +284,176 @@ function setSelection(ids = [], primaryId = null) {
     activeDrawLayerId = selId;
   }
 
-  document.getElementById('props-select').style.display = (herramienta === 'select' && selectedLayerIds.size > 0) ? '' : 'none';
+  refreshInspectorPanels();
+}
+
+let drawingShape = false;
+let shapeStartPos = null;
+let shapePreview = null;
+
+function getShapeToolConfig() {
+  const shapeTypeEl = document.getElementById('shape-type');
+  const fillColorEl = document.getElementById('shape-fill-color');
+  const strokeColorEl = document.getElementById('shape-stroke-color');
+  const strokeSizeEl = document.getElementById('shape-stroke-size');
+  const radiusEl = document.getElementById('shape-radius');
+
+  return {
+    shapeType: shapeTypeEl ? shapeTypeEl.value : 'square',
+    fillColor: fillColorEl ? fillColorEl.value : '#ffffff',
+    strokeColor: strokeColorEl ? strokeColorEl.value : '#07e2ff',
+    strokeWidth: strokeSizeEl ? parseInt(strokeSizeEl.value, 10) : 4,
+    borderRadius: radiusEl ? parseInt(radiusEl.value, 10) : 0
+  };
+}
+
+function syncShapeControlsFromObject(shapeObj) {
+  if (!shapeObj || shapeObj.tipo !== 'forma') return;
+
+  const shapeTypeEl = document.getElementById('shape-type');
+  const fillColorEl = document.getElementById('shape-fill-color');
+  const strokeColorEl = document.getElementById('shape-stroke-color');
+  const strokeSizeEl = document.getElementById('shape-stroke-size');
+  const strokeValEl = document.getElementById('shape-stroke-val');
+  const radiusEl = document.getElementById('shape-radius');
+  const radiusValEl = document.getElementById('shape-radius-val');
+
+  if (shapeTypeEl) shapeTypeEl.value = shapeObj.shapeType || 'square';
+  if (fillColorEl) fillColorEl.value = shapeObj.fillColor || '#ffffff';
+  if (strokeColorEl) strokeColorEl.value = shapeObj.strokeColor || '#07e2ff';
+  if (strokeSizeEl) strokeSizeEl.value = String(shapeObj.strokeWidth ?? 4);
+  if (strokeValEl) strokeValEl.textContent = String(shapeObj.strokeWidth ?? 4);
+  if (radiusEl) radiusEl.value = String(shapeObj.borderRadius ?? 0);
+  if (radiusValEl) radiusValEl.textContent = String(shapeObj.borderRadius ?? 0);
+}
+
+function refreshInspectorPanels() {
+  const ids = getSelectedLayerIds();
+  const hasSelection = herramienta === 'select' && ids.length > 0;
+  const primaryObj = ids.length === 1 ? objetos[ids[0]] : null;
+  const canEditSelectedShape = herramienta === 'select' && primaryObj && primaryObj.tipo === 'forma';
+
+  document.getElementById('props-draw').style.display = (herramienta === 'draw' || herramienta === 'eraser') ? 'flex' : 'none';
+  document.getElementById('props-text').style.display = herramienta === 'text' ? 'flex' : 'none';
+  document.getElementById('props-shape').style.display = (herramienta === 'shape' || canEditSelectedShape) ? 'flex' : 'none';
+  document.getElementById('props-select').style.display = hasSelection ? 'flex' : 'none';
+
+  if (canEditSelectedShape) {
+    syncShapeControlsFromObject(primaryObj);
+  }
+}
+
+function applyShapeControlsToSelectedShape() {
+  const ids = getSelectedLayerIds();
+  if (ids.length !== 1) return;
+
+  const id = ids[0];
+  const obj = objetos[id];
+  if (!obj || obj.tipo !== 'forma') return;
+
+  const cfg = getShapeToolConfig();
+  const nextShapeType = cfg.shapeType || 'square';
+  const nextFill = cfg.fillColor || '#ffffff';
+  const nextStroke = cfg.strokeColor || '#07e2ff';
+  const nextWidth = typeof cfg.strokeWidth === 'number' ? cfg.strokeWidth : 4;
+  const nextRadius = typeof cfg.borderRadius === 'number' ? cfg.borderRadius : 0;
+
+  const changed = obj.shapeType !== nextShapeType ||
+    obj.fillColor !== nextFill ||
+    obj.strokeColor !== nextStroke ||
+    obj.strokeWidth !== nextWidth ||
+    obj.borderRadius !== nextRadius;
+
+  if (!changed) return;
+
+  obj.shapeType = nextShapeType;
+  obj.fillColor = nextFill;
+  obj.strokeColor = nextStroke;
+  obj.strokeWidth = nextWidth;
+  obj.borderRadius = nextRadius;
+
+  const { _img, ...payload } = obj;
+  socket.emit('obj-add', payload);
+  renderLayersPanel();
+  redraw();
+}
+
+function buildShapeObjectFromDrag(start, end, options = {}, constrainProportions = false, fromCenter = false) {
+  let endX = end.x;
+  let endY = end.y;
+
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+
+  if (fromCenter) {
+    let halfW = Math.max(8, Math.abs(dx));
+    let halfH = Math.max(8, Math.abs(dy));
+
+    if (constrainProportions) {
+      const size = Math.max(8, Math.min(Math.abs(dx), Math.abs(dy)));
+      halfW = size;
+      halfH = size;
+    }
+
+    return {
+      tipo: 'forma',
+      shapeType: options.shapeType || 'square',
+      x: start.x - halfW,
+      y: start.y - halfH,
+      w: halfW * 2,
+      h: halfH * 2,
+      fillColor: options.fillColor || '#ffffff',
+      strokeColor: options.strokeColor || '#07e2ff',
+      strokeWidth: typeof options.strokeWidth === 'number' ? options.strokeWidth : 4,
+      borderRadius: typeof options.borderRadius === 'number' ? options.borderRadius : 0
+    };
+  }
+
+  if (constrainProportions) {
+    const size = Math.max(8, Math.min(Math.abs(dx), Math.abs(dy)));
+    const sx = dx < 0 ? -1 : 1;
+    const sy = dy < 0 ? -1 : 1;
+    endX = start.x + (sx * size);
+    endY = start.y + (sy * size);
+  }
+
+  const x = Math.min(start.x, endX);
+  const y = Math.min(start.y, endY);
+  const w = Math.max(8, Math.abs(endX - start.x));
+  const h = Math.max(8, Math.abs(endY - start.y));
+
+  return {
+    tipo: 'forma',
+    shapeType: options.shapeType || 'square',
+    x,
+    y,
+    w,
+    h,
+    fillColor: options.fillColor || '#ffffff',
+    strokeColor: options.strokeColor || '#07e2ff',
+    strokeWidth: typeof options.strokeWidth === 'number' ? options.strokeWidth : 4,
+    borderRadius: typeof options.borderRadius === 'number' ? options.borderRadius : 0
+  };
+}
+
+function crearFormaDesdePreview() {
+  if (!shapePreview) return;
+
+  const id = `shape_${Date.now()}`;
+  const shapeLabel = getShapeLabel(shapePreview.shapeType);
+  const obj = {
+    id,
+    ...shapePreview,
+    zIndex: getMaxLayerZIndex() + 1,
+    hidden: false,
+    layerName: `${shapeLabel} ${nextLayerOrdinal(shapeLabel)}`
+  };
+
+  objetos[id] = obj;
+  setSelection([id], id);
+  socket.emit('obj-add', obj);
+  toast(`⬢ ${shapeLabel} agregado`);
+  setTool('select');
 }
 
 function getSelectableBounds(obj) {
@@ -290,8 +488,8 @@ function renderLayersPanel() {
   }
 
   root.innerHTML = items.map((layer, index) => {
-    const layerType = layer.isDraw ? 'DRAWING' : layer.tipo.toUpperCase();
-    const layerIcon = layer.isDraw ? '✎' : layer.tipo === 'texto' ? 'T' : '▦';
+    const layerType = layer.isDraw ? 'DRAWING' : layer.tipo === 'forma' ? 'FORMA' : layer.tipo.toUpperCase();
+    const layerIcon = layer.isDraw ? '✎' : layer.tipo === 'texto' ? 'T' : layer.tipo === 'forma' ? '◈' : '▦';
     const layerIndex = String(items.length - index).padStart(2, '0');
     const visibilityBadge = `<span class="layer-badge ${layer.hidden ? 'hidden' : 'visible'}">${layer.hidden ? 'HIDDEN' : 'VISIBLE'}</span>`;
     const lockBadge = layer.isLocked ? '<span class="layer-badge locked">LOCKED</span>' : '';
@@ -299,7 +497,7 @@ function renderLayersPanel() {
     return `
       <div class="layer-item ${selectedLayerIds.has(layer.id) ? 'is-selected' : ''} ${layer.hidden ? 'is-hidden' : ''}" data-layer-id="${layer.id}" draggable="true">
         <div class="layer-grip" title="Arrastrar para reordenar">⋮⋮</div>
-        <div class="layer-type-icon ${layer.isDraw ? 'is-draw' : layer.tipo === 'texto' ? 'is-text' : 'is-image'}" aria-hidden="true">${layerIcon}</div>
+        <div class="layer-type-icon ${layer.isDraw ? 'is-draw' : layer.tipo === 'texto' ? 'is-text' : layer.tipo === 'forma' ? 'is-shape' : 'is-image'}" aria-hidden="true">${layerIcon}</div>
         <div class="layer-meta">
           <div class="layer-topline">
             <span class="layer-index">LAYER ${layerIndex}</span>
@@ -340,7 +538,7 @@ function selectLayer(layerId, options = {}) {
   if (selId && isDrawLayer(objetos[selId])) {
     activeDrawLayerId = selId;
   }
-  document.getElementById('props-select').style.display = (herramienta === 'select' && selectedLayerIds.size > 0) ? '' : 'none';
+  refreshInspectorPanels();
   renderLayersPanel();
   redraw();
 }
@@ -494,11 +692,14 @@ function setTool(t) {
   if (btn) btn.classList.add('activo');
   canvas.className = 'tool-' + t;
 
-  document.getElementById('props-draw').style.display = (t === 'draw' || t === 'eraser') ? '' : 'none';
-  document.getElementById('props-text').style.display = t === 'text' ? '' : 'none';
-  document.getElementById('props-select').style.display = (t === 'select' && selectedLayerIds.size > 0) ? '' : 'none';
+  refreshInspectorPanels();
 
   if (t !== 'select') deseleccionar();
+  if (t !== 'shape') {
+    drawingShape = false;
+    shapePreview = null;
+    shapeStartPos = null;
+  }
   cerrarTextInput();
   renderLayersPanel();
 }
@@ -749,7 +950,8 @@ function onDown(e) {
         dragSelectionSnapshot = null;
       }
 
-      document.getElementById('props-select').style.display = (herramienta === 'select' && selectedLayerIds.size > 0) ? '' : 'none';
+      document.getElementById('props-select').style.display = (herramienta === 'select' && selectedLayerIds.size > 0) ? 'flex' : 'none';
+      refreshInspectorPanels();
       renderLayersPanel();
     } else {
       deseleccionar();
@@ -763,6 +965,14 @@ function onDown(e) {
 
   if (herramienta === 'text') {
     abrirTextInput(pos.x, pos.y, e.clientX, e.clientY);
+    return;
+  }
+
+  if (herramienta === 'shape') {
+    drawingShape = true;
+    shapeStartPos = { x: pos.x, y: pos.y };
+    shapePreview = buildShapeObjectFromDrag(shapeStartPos, pos, getShapeToolConfig(), e.shiftKey, e.altKey);
+    redraw();
   }
 }
 
@@ -808,6 +1018,12 @@ function onMove(e) {
 
   if (selectingArea) {
     selAreaEnd = { x: pos.x, y: pos.y };
+    redraw();
+    return;
+  }
+
+  if (drawingShape && shapeStartPos) {
+    shapePreview = buildShapeObjectFromDrag(shapeStartPos, pos, getShapeToolConfig(), e.shiftKey, e.altKey);
     redraw();
     return;
   }
@@ -935,6 +1151,16 @@ function onUp() {
     } else {
       setSelection([], null);
     }
+  }
+
+  if (drawingShape) {
+    if (shapePreview) {
+      guardarEstadoHistorial();
+      crearFormaDesdePreview();
+    }
+    drawingShape = false;
+    shapeStartPos = null;
+    shapePreview = null;
   }
 
   pintando = false;
@@ -1130,6 +1356,10 @@ window.addEventListener('keydown', (e) => {
     case 't':
       setTool('text');
       break;
+    case 'g':
+    case 's':
+      setTool('shape');
+      break;
   }
 });
 
@@ -1162,6 +1392,20 @@ window.addEventListener('keydown', (e) => {
 document.getElementById('draw-size').addEventListener('input', function() {
   document.getElementById('draw-size-val').textContent = this.value;
 });
+
+document.getElementById('shape-stroke-size').addEventListener('input', function() {
+  document.getElementById('shape-stroke-val').textContent = this.value;
+  applyShapeControlsToSelectedShape();
+});
+
+document.getElementById('shape-radius').addEventListener('input', function() {
+  document.getElementById('shape-radius-val').textContent = this.value;
+  applyShapeControlsToSelectedShape();
+});
+
+document.getElementById('shape-fill-color').addEventListener('input', applyShapeControlsToSelectedShape);
+document.getElementById('shape-stroke-color').addEventListener('input', applyShapeControlsToSelectedShape);
+document.getElementById('shape-type').addEventListener('change', applyShapeControlsToSelectedShape);
 
 window.addEventListener('resize', fitCanvas);
 fitCanvas();
