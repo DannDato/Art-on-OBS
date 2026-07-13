@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const session = require('express-session');
 const path = require('path');
 const fs = require('fs');
+const dotenv = require('dotenv');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,6 +14,8 @@ const PORT = 3069;
 // Configurar carpetas base
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
+
+dotenv.config();
 
 // ── CONFIGURACIÓN DE MIDDLEWARES ─────────────────────────────────────────────
 app.use(express.json());

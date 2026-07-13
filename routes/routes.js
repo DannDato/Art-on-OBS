@@ -4,7 +4,7 @@ const upload = require('../config/multer');
 const verificarAutenticacion = require('../middlewares/authenticate');
 
 // CONTRASEÑA GLOBAL DEL PANEL
-const PASSWORD_PANEL = "Maquinaria01";
+const PASSWORD_PANEL = process.env.DC_MS_PASSWORD
 
 module.exports = function(app, uploadsDir) {
 
