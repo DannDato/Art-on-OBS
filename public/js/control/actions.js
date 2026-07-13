@@ -19,12 +19,75 @@ if (typeof window.getOrderedObjectEntries !== 'function') {
   window.getOrderedObjectEntries = () => Object.entries(objetos || {});
 }
 
+if (typeof window.__drawcastRedrawCount !== 'number') {
+  window.__drawcastRedrawCount = 0;
+}
+
+let livePresenceStats = { total: 0, editors: 0, overlays: 0, synced: false };
+let liveFps = 0;
+
+function updateLiveMetaBar() {
+  const clientsEl = document.getElementById('meta-clients');
+  const editorsEl = document.getElementById('meta-editors');
+  const overlaysEl = document.getElementById('meta-overlays');
+  const fpsEl = document.getElementById('meta-fps');
+  const stateTextEl = document.getElementById('meta-state-text');
+  const stateDotEl = document.getElementById('meta-state-dot');
+  if (!clientsEl || !editorsEl || !overlaysEl || !fpsEl || !stateTextEl || !stateDotEl) return;
+
+  clientsEl.textContent = String(livePresenceStats.total || 0);
+  editorsEl.textContent = String(livePresenceStats.editors || 0);
+  overlaysEl.textContent = String(livePresenceStats.overlays || 0);
+  fpsEl.textContent = String(Math.max(0, Math.round(liveFps || 0)));
+
+  if (livePresenceStats.synced) {
+    stateTextEl.textContent = 'Editor y Streamer conectados';
+    stateDotEl.classList.add('is-ok');
+  } else {
+    stateTextEl.textContent = 'Esperando editor/streamer';
+    stateDotEl.classList.remove('is-ok');
+  }
+}
+
+function startLiveFpsMonitor() {
+  let lastCount = window.__drawcastRedrawCount || 0;
+  let last = performance.now();
+
+  const tick = (now) => {
+    const elapsed = now - last;
+    if (elapsed >= 1000) {
+      const currentCount = window.__drawcastRedrawCount || 0;
+      const redrawFrames = Math.max(0, currentCount - lastCount);
+      liveFps = (redrawFrames * 1000) / elapsed;
+      lastCount = currentCount;
+      last = now;
+      updateLiveMetaBar();
+    }
+    requestAnimationFrame(tick);
+  };
+
+  requestAnimationFrame(tick);
+}
+
 socket.on('connect', () => {
   document.getElementById('status').classList.remove('off');
+  socket.emit('presence-register', { role: 'editor' });
+  updateLiveMetaBar();
 });
 
 socket.on('disconnect', () => {
   document.getElementById('status').classList.add('off');
+  updateLiveMetaBar();
+});
+
+socket.on('presence-stats', (stats) => {
+  livePresenceStats = {
+    total: typeof stats?.total === 'number' ? stats.total : 0,
+    editors: typeof stats?.editors === 'number' ? stats.editors : 0,
+    overlays: typeof stats?.overlays === 'number' ? stats.overlays : 0,
+    synced: !!stats?.synced
+  };
+  updateLiveMetaBar();
 });
 
 socket.on('obj-add', (d) => {
@@ -300,9 +363,9 @@ function getShapeToolConfig() {
 
   return {
     shapeType: shapeTypeEl ? shapeTypeEl.value : 'square',
-    fillColor: fillColorEl ? fillColorEl.value : '#ffffff',
-    strokeColor: strokeColorEl ? strokeColorEl.value : '#07e2ff',
-    strokeWidth: strokeSizeEl ? parseInt(strokeSizeEl.value, 10) : 4,
+    fillColor: fillColorEl ? fillColorEl.value : '#e9e9e9',
+    strokeColor: strokeColorEl ? strokeColorEl.value : '#000000',
+    strokeWidth: strokeSizeEl ? parseInt(strokeSizeEl.value, 10) : 0,
     borderRadius: radiusEl ? parseInt(radiusEl.value, 10) : 0
   };
 }
@@ -683,6 +746,17 @@ function subirCapaSeleccionadaUnNivel() {
   const targetId = orderedTop[from - 1];
   reorderLayers(selId, targetId);
   toast('⬆️ Capa subida');
+}
+function bajarCapaSeleccionadaUnNivel() {
+  if (!selId || !objetos[selId]) return;
+
+  const orderedTop = getLayerItems().map((l) => l.id);
+  const from = orderedTop.indexOf(selId);
+  if (from >= orderedTop.length - 1) return;
+
+  const targetId = orderedTop[from + 1];
+  reorderLayers(selId, targetId);
+  toast('⬇️ Capa bajada');
 }
 
 function setTool(t) {
@@ -1318,9 +1392,15 @@ window.addEventListener('keydown', (e) => {
 
   const key = e.key.toLowerCase();
 
-  if (e.key === 'ArrowUp') {
+//   evaluar ctrl mas arroup
+  if (e.ctrlKey && e.key === 'ArrowUp') {
     e.preventDefault();
     subirCapaSeleccionadaUnNivel();
+    return;
+  }
+  if (e.ctrlKey && e.key === 'ArrowDown') {
+    e.preventDefault();
+    bajarCapaSeleccionadaUnNivel();
     return;
   }
 
@@ -1409,6 +1489,8 @@ document.getElementById('shape-type').addEventListener('change', applyShapeContr
 
 window.addEventListener('resize', fitCanvas);
 fitCanvas();
+startLiveFpsMonitor();
+updateLiveMetaBar();
 initLayersViewMode();
 ensureDefaultDrawLayer();
 renderLayersPanel();

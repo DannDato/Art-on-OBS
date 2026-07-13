@@ -17,6 +17,10 @@ const ctx = canvas.getContext('2d');
 canvas.width = 1920;
 canvas.height = 1080;
 
+socket.on('connect', () => {
+  socket.emit('presence-register', { role: 'overlay' });
+});
+
 function renderLineasCompuestas(lineas, offsetX = 0, offsetY = 0, scaleX = 1, scaleY = 1) {
   if (!lineas || lineas.length === 0) return;
 
@@ -44,6 +48,134 @@ function renderLineasCompuestas(lineas, offsetX = 0, offsetY = 0, scaleX = 1, sc
   ctx.globalCompositeOperation = 'source-over';
 }
 
+function traceRoundedPolygon(points, radius) {
+  if (!points || points.length < 3) return;
+  if (radius <= 0) {
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.closePath();
+    return;
+  }
+
+  const corners = points.map((curr, i) => {
+    const prev = points[(i - 1 + points.length) % points.length];
+    const next = points[(i + 1) % points.length];
+
+    const toPrevX = prev.x - curr.x;
+    const toPrevY = prev.y - curr.y;
+    const toNextX = next.x - curr.x;
+    const toNextY = next.y - curr.y;
+
+    const lenPrev = Math.hypot(toPrevX, toPrevY) || 1;
+    const lenNext = Math.hypot(toNextX, toNextY) || 1;
+    const r = Math.min(radius, lenPrev / 2, lenNext / 2);
+
+    return {
+      inPoint: {
+        x: curr.x + (toPrevX / lenPrev) * r,
+        y: curr.y + (toPrevY / lenPrev) * r
+      },
+      outPoint: {
+        x: curr.x + (toNextX / lenNext) * r,
+        y: curr.y + (toNextY / lenNext) * r
+      }
+    };
+  });
+
+  ctx.beginPath();
+  ctx.moveTo(corners[0].outPoint.x, corners[0].outPoint.y);
+
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(corners[i].inPoint.x, corners[i].inPoint.y);
+    ctx.quadraticCurveTo(points[i].x, points[i].y, corners[i].outPoint.x, corners[i].outPoint.y);
+  }
+
+  ctx.lineTo(corners[0].inPoint.x, corners[0].inPoint.y);
+  ctx.quadraticCurveTo(points[0].x, points[0].y, corners[0].outPoint.x, corners[0].outPoint.y);
+  ctx.closePath();
+}
+
+function traceShapePath(shape) {
+  const x = shape.x;
+  const y = shape.y;
+  const w = Math.max(2, shape.w);
+  const h = Math.max(2, shape.h);
+  const type = shape.shapeType || 'square';
+  const radius = Math.max(0, Math.min(shape.borderRadius || 0, Math.min(w, h) / 2));
+
+  if (type === 'circle') {
+    ctx.beginPath();
+    ctx.ellipse(x + (w / 2), y + (h / 2), w / 2, h / 2, 0, 0, Math.PI * 2);
+    return;
+  }
+
+  if (type === 'triangle') {
+    traceRoundedPolygon([
+      { x: x + (w / 2), y },
+      { x: x + w, y: y + h },
+      { x, y: y + h }
+    ], radius);
+    return;
+  }
+
+  if (type === 'star') {
+    const cx = x + (w / 2);
+    const cy = y + (h / 2);
+    const outer = Math.min(w, h) / 2;
+    const inner = outer * 0.5;
+    let angle = -Math.PI / 2;
+    const points = [];
+
+    for (let i = 0; i < 5; i++) {
+      points.push({ x: cx + (Math.cos(angle) * outer), y: cy + (Math.sin(angle) * outer) });
+      angle += Math.PI / 5;
+      points.push({ x: cx + (Math.cos(angle) * inner), y: cy + (Math.sin(angle) * inner) });
+      angle += Math.PI / 5;
+    }
+
+    traceRoundedPolygon(points, radius);
+    return;
+  }
+
+  if (radius <= 0) {
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    return;
+  }
+
+  const r = radius;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawShape(shape) {
+  traceShapePath(shape);
+  const strokeWidth = Math.max(0, shape.strokeWidth || 0);
+
+  if (shape.fillColor) {
+    ctx.fillStyle = shape.fillColor;
+    ctx.fill();
+  }
+
+  if (strokeWidth > 0) {
+    ctx.lineWidth = strokeWidth;
+    ctx.strokeStyle = shape.strokeColor || '#07e2ff';
+    ctx.stroke();
+  }
+}
+
 // Base de datos local de objetos en pantalla
 let objetos = {};
 
@@ -58,7 +190,12 @@ function getOrderedObjectEntries() {
 // ═══════════════════════════════════════════════════════════════════════════
 // MOTOR DE REDRAW (Dibuja todo con curvas y capas en OBS)
 // ═══════════════════════════════════════════════════════════════════════════
-function redraw() {
+const OVERLAY_REDRAW_MAX_FPS = 30;
+const OVERLAY_REDRAW_MIN_MS = 1000 / OVERLAY_REDRAW_MAX_FPS;
+let overlayLastRedrawTs = 0;
+let overlayRedrawTimer = null;
+
+function redrawNow() {
   ctx.clearRect(0, 0, 1920, 1080);
 
   for (const [id, obj] of getOrderedObjectEntries()) {
@@ -81,7 +218,12 @@ function redraw() {
       ctx.fillText(obj.texto, obj.x, obj.y + (obj.fontSize || 48));
     }
 
-    // 3. DIBUJAR TRAZOS VECTORIALES COMPLETA Y SUAVIZADOS
+    // 3. FORMAS
+    else if (obj.tipo === 'forma') {
+      drawShape(obj);
+    }
+
+    // 4. DIBUJAR TRAZOS VECTORIALES COMPLETA Y SUAVIZADOS
     else if (obj.tipo === 'trazo' && obj.lineas && obj.lineas.length > 0) {
       if (obj.compuesto) {
         renderLineasCompuestas(obj.lineas, obj.x || 0, obj.y || 0);
@@ -119,6 +261,29 @@ function redraw() {
       }
     }
   }
+}
+
+function redraw() {
+  const now = performance.now();
+  const elapsed = now - overlayLastRedrawTs;
+
+  if (elapsed >= OVERLAY_REDRAW_MIN_MS) {
+    if (overlayRedrawTimer) {
+      clearTimeout(overlayRedrawTimer);
+      overlayRedrawTimer = null;
+    }
+    overlayLastRedrawTs = now;
+    redrawNow();
+    return;
+  }
+
+  if (overlayRedrawTimer) return;
+  const wait = Math.max(0, OVERLAY_REDRAW_MIN_MS - elapsed);
+  overlayRedrawTimer = setTimeout(() => {
+    overlayRedrawTimer = null;
+    overlayLastRedrawTs = performance.now();
+    redrawNow();
+  }, wait);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

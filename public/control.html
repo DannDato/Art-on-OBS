@@ -110,7 +110,17 @@
 
   <textarea id="text-input-el" rows="1"></textarea>
   <div id="drop-overlay">READY TO DECODE IMAGE 🖼️</div>
+
+  <div id="live-meta" class="live-meta">
+    <div class="live-meta-item"><span class="meta-label">CLIENTES</span><span id="meta-clients">0</span></div>
+    <div class="live-meta-item"><span class="meta-label">EDITORES</span><span id="meta-editors">0</span></div>
+    <div class="live-meta-item"><span class="meta-label">STREAMERS</span><span id="meta-overlays">0</span></div>
+    <div class="live-meta-item"><span class="meta-label">FPS</span><span id="meta-fps">0</span></div>
+    <div class="live-meta-item live-meta-state"><span id="meta-state-dot" class="state-dot"></span><span id="meta-state-text">Esperando sincronizacion...</span></div>
+  </div>
 </div>
+
+
 
 <div id="props">
   <div id="props-draw" class="prop-group">
@@ -152,16 +162,16 @@
     </div>
     <div class="prop-row">
       <label>RELLENO</label>
-      <input type="color" id="shape-fill-color" value="#ffffff">
+      <input type="color" id="shape-fill-color" value="#e9e9e9">
     </div>
     <div class="prop-row">
       <label>BORDE</label>
-      <input type="color" id="shape-stroke-color" value="#07e2ff">
+      <input type="color" id="shape-stroke-color" value="#000000">
     </div>
     <div class="prop-row">
       <label>GROSOR BORDE</label>
-      <input type="range" id="shape-stroke-size" min="0" max="24" value="4">
-      <span id="shape-stroke-val">4</span>
+      <input type="range" id="shape-stroke-size" min="0" max="24" value="0">
+      <span id="shape-stroke-val">0</span>
     </div>
     <div class="prop-row">
       <label>BORDER-RADIUS</label>

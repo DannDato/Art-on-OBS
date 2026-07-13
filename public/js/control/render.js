@@ -251,7 +251,12 @@ function drawShape(shape) {
   }
 }
 
-function redraw() {
+const REDRAW_MAX_FPS = 30;
+const REDRAW_MIN_FRAME_MS = 1000 / REDRAW_MAX_FPS;
+let lastRedrawTs = 0;
+let redrawTimer = null;
+
+function redrawNow() {
   ctx.clearRect(0, 0, OVERLAY_W, OVERLAY_H);
 
   ctx.strokeStyle = 'rgba(255,255,255,0.03)';
@@ -361,4 +366,29 @@ function redraw() {
     drawShape(shapePreview);
     ctx.restore();
   }
+
+  window.__drawcastRedrawCount = (window.__drawcastRedrawCount || 0) + 1;
+}
+
+function redraw(force = false) {
+  const now = performance.now();
+  const elapsed = now - lastRedrawTs;
+
+  if (force || elapsed >= REDRAW_MIN_FRAME_MS) {
+    if (redrawTimer) {
+      clearTimeout(redrawTimer);
+      redrawTimer = null;
+    }
+    lastRedrawTs = now;
+    redrawNow();
+    return;
+  }
+
+  if (redrawTimer) return;
+  const wait = Math.max(0, REDRAW_MIN_FRAME_MS - elapsed);
+  redrawTimer = setTimeout(() => {
+    redrawTimer = null;
+    lastRedrawTs = performance.now();
+    redrawNow();
+  }, wait);
 }

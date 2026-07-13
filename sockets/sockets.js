@@ -2,6 +2,23 @@ const path = require('path');
 const fs = require('fs');
 
 module.exports = function(io, uploadsDir) {
+  const socketRoles = new Map();
+
+  const buildPresenceStats = () => {
+    const roles = Array.from(socketRoles.values());
+    const editors = roles.filter((r) => r === 'editor').length;
+    const overlays = roles.filter((r) => r === 'overlay').length;
+    return {
+      total: socketRoles.size,
+      editors,
+      overlays,
+      synced: editors > 0 && overlays > 0
+    };
+  };
+
+  const emitPresenceStats = () => {
+    io.emit('presence-stats', buildPresenceStats());
+  };
 
   // Función utilitaria para limpiar por completo la carpeta uploads
   const vaciarCarpetaUploads = () => {
@@ -18,6 +35,14 @@ module.exports = function(io, uploadsDir) {
   // Listener principal de Socket.io
   io.on('connection', (socket) => {
     console.log(`🔌 Cliente conectado: ${socket.id}`);
+    socketRoles.set(socket.id, 'unknown');
+    emitPresenceStats();
+
+    socket.on('presence-register', (d) => {
+      const role = d && (d.role === 'editor' || d.role === 'overlay') ? d.role : 'unknown';
+      socketRoles.set(socket.id, role);
+      emitPresenceStats();
+    });
 
     // Dibujo libre y streaming rápido en vivo (milisegundo a milisegundo)
     socket.on('trazo-en-vivo', (d) => socket.broadcast.emit('trazo-en-vivo', d));
@@ -52,6 +77,8 @@ module.exports = function(io, uploadsDir) {
 
     // Control de desconexión preventiva
     socket.on('disconnect', () => {
+      socketRoles.delete(socket.id);
+      emitPresenceStats();
       console.log(`🔌 Cliente desconectado (${socket.id}). Vaciando lienzo global...`);
       vaciarCarpetaUploads();
       io.emit('limpiar-todo');
