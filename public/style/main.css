@@ -29,6 +29,46 @@
   --rgb-black: 0, 0, 0;
   --rgb-danger: 248, 113, 113;
   --rgb-overlay-surface: 21, 18, 16;
+
+  --scrollbar-track: rgba(8, 8, 8, 0.45);
+  --scrollbar-thumb: rgba(7, 226, 255, 0.42);
+  --scrollbar-thumb-hover: rgba(7, 226, 255, 0.68);
+  --scrollbar-thumb-active: rgba(7, 226, 255, 0.88);
+}
+
+/* =========================
+   GLOBAL SCROLLBARS
+   ========================= */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--scrollbar-thumb), rgba(7, 226, 255, 0.3));
+  border: 2px solid rgba(var(--rgb-black), 0.35);
+  border-radius: 10px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--scrollbar-thumb-hover), rgba(7, 226, 255, 0.45));
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, var(--scrollbar-thumb-active), rgba(7, 226, 255, 0.58));
+}
+
+*::-webkit-scrollbar-corner {
+  background: rgba(var(--rgb-black), 0.25);
 }
 
 /* =========================
@@ -198,6 +238,7 @@ body.control-page #canvas-main.tool-select { cursor: default; }
 body.control-page #canvas-main.tool-draw { cursor: crosshair; }
 body.control-page #canvas-main.tool-eraser { cursor: cell; }
 body.control-page #canvas-main.tool-text { cursor: text; }
+body.control-page #canvas-main.tool-timer { cursor: crosshair; }
 
 body.control-page .terminal-watermark {
   position: absolute;
@@ -341,11 +382,24 @@ body.control-page .prop-group {
   flex-direction: column;
 }
 
+body.control-page #props-layers {
+  flex: 1;
+  min-height: 0;
+}
+
 body.control-page #props-select {
   display: none;
 }
 
 body.control-page #props-shape {
+  display: none;
+}
+
+body.control-page #props-image {
+  display: none;
+}
+
+body.control-page #props-timer {
   display: none;
 }
 
@@ -402,8 +456,20 @@ body.control-page #shape-radius-val {
   color: var(--color-muted);
 }
 
+body.control-page #timer-stroke-val,
+body.control-page #timer-size-val,
+body.control-page #text-stroke-val,
+body.control-page #text-size-val {
+  min-width: 24px;
+  color: var(--color-muted);
+}
+
 body.control-page #text-size {
-  width: 60px;
+  width: 220px;
+}
+
+body.control-page #timer-size {
+  width: 220px;
 }
 
 body.control-page #draw-size-val {
@@ -462,6 +528,117 @@ body.control-page .prop-btn.danger:hover {
   border-color: var(--color-danger);
 }
 
+body.control-page .timer-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+body.control-page .timer-quick-actions .prop-btn {
+  margin-top: 0;
+  padding: 8px 6px;
+  font-size: 10px;
+}
+
+body.control-page .image-search-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+}
+
+body.control-page .image-search-row label {
+  width: 100%;
+  letter-spacing: 0.8px;
+}
+
+body.control-page .image-main-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+body.control-page .image-main-actions .prop-btn {
+  margin-top: 0;
+}
+
+body.control-page .image-search-panel {
+  border: 1px solid var(--color-border);
+  padding: 10px;
+  background: rgba(var(--rgb-black), 0.15);
+}
+
+body.control-page #image-search-query {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgba(var(--rgb-black), 0.38), rgba(var(--rgb-grid), 0.08));
+  border: 1px solid rgba(7, 226, 255, 0.42);
+  outline: 1px solid rgba(var(--rgb-black), 0.28);
+  outline-offset: 0;
+  box-shadow: inset 0 0 0 1px rgba(var(--rgb-black), 0.2);
+  color: var(--color-text);
+  letter-spacing: 0.3px;
+  font-size: 12px;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+body.control-page #image-search-query::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+body.control-page #image-search-query:focus {
+  border-color: var(--color-accent);
+  background: linear-gradient(180deg, rgba(var(--rgb-black), 0.42), rgba(var(--rgb-grid), 0.14));
+  box-shadow: 0 0 0 2px rgba(7, 226, 255, 0.2), inset 0 0 0 1px rgba(var(--rgb-black), 0.22);
+}
+
+body.control-page .image-search-status {
+  font-size: 11px;
+  color: var(--color-muted);
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+body.control-page .image-search-results {
+  max-height: 240px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body.control-page .image-result-card {
+  border: 1px solid var(--color-border);
+  background: var(--color-input);
+  padding: 6px;
+  cursor: grab;
+}
+
+body.control-page .image-result-card:active {
+  cursor: grabbing;
+}
+
+body.control-page .image-result-thumb {
+  width: 100%;
+  height: 84px;
+  object-fit: cover;
+  border: 1px solid var(--color-border);
+  display: block;
+}
+
+body.control-page .image-result-title {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 body.control-page #file-input {
   display: none;
 }
@@ -489,7 +666,8 @@ body.control-page .layers-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 340px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   margin-top: 12px;
   padding-right: 6px;

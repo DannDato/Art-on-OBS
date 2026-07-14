@@ -5,6 +5,9 @@
 <link rel="shortcut icon" href="img/icon.ico" type="image/x-icon">
 <meta charset="UTF-8">
 <title>DrawCast | DannDato</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@700;900&family=Outfit:wght@700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style/main.css">
 </head>
 <body class="control-page">
@@ -31,6 +34,14 @@
     <span class="tip">DRAW // PENCIL</span>
   </button>
 
+  <button class="tool-btn" id="tool-image" onclick="setTool('image')">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24">
+      <path fill-rule="evenodd" d="M13 10a1 1 0 0 1 1-1h.01a1 1 0 1 1 0 2H14a1 1 0 0 1-1-1Z" clip-rule="evenodd"/>
+      <path fill-rule="evenodd" d="M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12c0 .556-.227 1.06-.593 1.422A.999.999 0 0 1 20.5 20H4a2.002 2.002 0 0 1-2-2V6Zm6.892 12 3.833-5.356-3.99-4.322a1 1 0 0 0-1.549.097L4 12.879V6h16v9.95l-3.257-3.619a1 1 0 0 0-1.557.088L11.2 18H8.892Z" clip-rule="evenodd"/>
+    </svg>
+    <span class="tip">IMPORT IMAGE / GIF</span>
+  </button>
+
   <button class="tool-btn" id="tool-shape" onclick="setTool('shape')">
     <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
       <rect x="3" y="3" width="7" height="7" stroke="currentColor" stroke-width="1.6"/>
@@ -54,13 +65,14 @@
     </svg>
     <span class="tip">TEXT GENERATOR</span>
   </button>
-  
-  <button class="tool-btn" id="tool-image" onclick="triggerUpload()">
-    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24">
-      <path fill-rule="evenodd" d="M13 10a1 1 0 0 1 1-1h.01a1 1 0 1 1 0 2H14a1 1 0 0 1-1-1Z" clip-rule="evenodd"/>
-      <path fill-rule="evenodd" d="M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12c0 .556-.227 1.06-.593 1.422A.999.999 0 0 1 20.5 20H4a2.002 2.002 0 0 1-2-2V6Zm6.892 12 3.833-5.356-3.99-4.322a1 1 0 0 0-1.549.097L4 12.879V6h16v9.95l-3.257-3.619a1 1 0 0 0-1.557.088L11.2 18H8.892Z" clip-rule="evenodd"/>
+
+  <button class="tool-btn" id="tool-timer" onclick="setTool('timer')">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="13" r="7" stroke="currentColor" stroke-width="1.8"/>
+      <path d="M12 9v4l2.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M9 3h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
     </svg>
-    <span class="tip">IMPORT IMAGE / GIF</span>
+    <span class="tip">TIMER</span>
   </button>
 
   <div class="sidebar-sep"></div>
@@ -140,12 +152,31 @@
   <div id="props-text" class="prop-group">
     <h2>[02] CONFIG TEXTO</h2>
     <div class="prop-row">
-      <label>COLOR</label>
+      <label>FUENTE</label>
+      <select id="text-font">
+        <option value="segoe" selected>Segoe UI (Default)</option>
+        <option value="bebas">Bebas Neue</option>
+        <option value="outfit">Outfit</option>
+        <option value="montserrat">Montserrat</option>
+      </select>
+    </div>
+    <div class="prop-row">
+      <label>RELLENO</label>
       <input type="color" id="text-color" value="#ffffff">
     </div>
     <div class="prop-row">
+      <label>BORDE</label>
+      <input type="color" id="text-stroke-color" value="#000000">
+    </div>
+    <div class="prop-row">
+      <label>GROSOR BORDE</label>
+      <input type="range" id="text-stroke-size" min="0" max="24" value="6">
+      <span id="text-stroke-val">6</span>
+    </div>
+    <div class="prop-row">
       <label>TAMAÑO</label>
-      <input type="number" id="text-size" value="56" min="12" max="200">
+      <input type="range" id="text-size" min="5" max="400" value="56">
+      <span id="text-size-val">56</span>
     </div>
   </div>
 
@@ -180,8 +211,90 @@
     </div>
   </div>
 
+  <div id="props-image" class="prop-group">
+    <h2>[02A] IMAGENES</h2>
+    <div class="prop-row">
+      <label>BORDER-RADIUS</label>
+      <input type="range" id="image-radius" min="0" max="300" value="0">
+      <span id="image-radius-val">0</span>
+    </div>
+    <div class="prop-row">
+      <label>OPACIDAD</label>
+      <input type="range" id="image-opacity" min="0" max="100" value="100">
+      <span id="image-opacity-val">100%</span>
+    </div>
+    <div class="image-main-actions">
+      <button id="image-upload-btn" class="prop-btn sec" type="button">SUBIR</button>
+      <button id="image-search-toggle-btn" class="prop-btn sec" type="button">BUSCAR</button>
+    </div>
+    <div id="image-search-panel" class="image-search-panel" style="display:none;">
+      <div class="prop-row image-search-row">
+        <label>BUSCAR EN LA WEB:</label>
+        <input type="text" id="image-search-query" placeholder="Ej: anime png transparente">
+      </div>
+      <button id="image-search-btn" class="prop-btn sec" type="button">BUSCAR EN WIKIMEDIA</button>
+      <div id="image-search-status" class="image-search-status">Arrastra un resultado al canvas para agregarlo.</div>
+      <div id="image-search-results" class="image-search-results"></div>
+    </div>
+  </div>
+
+  <div id="props-timer" class="prop-group">
+    <h2>[02C] TIMER</h2>
+    <div class="prop-row">
+      <label>MODO</label>
+      <select id="timer-mode">
+        <option value="up" selected>Hacia arriba</option>
+        <option value="down">Hacia abajo</option>
+      </select>
+    </div>
+    <div class="prop-row">
+      <label>INICIO</label>
+      <input type="text" id="timer-start" value="00:00:00" maxlength="8" placeholder="HH:MM:SS">
+    </div>
+    <div class="prop-row">
+      <label>LIMITE</label>
+      <input type="text" id="timer-limit" value="99:59:59" maxlength="8" placeholder="HH:MM:SS">
+    </div>
+    <div class="timer-quick-actions">
+      <button id="timer-minus-5-btn" class="prop-btn sec" type="button">-5s</button>
+      <button id="timer-minus-2-btn" class="prop-btn sec" type="button">-2s</button>
+      <button id="timer-playpause-btn" class="prop-btn sec" type="button">PLAY</button>
+      <button id="timer-plus-2-btn" class="prop-btn sec" type="button">+2s</button>
+      <button id="timer-plus-5-btn" class="prop-btn sec" type="button">+5s</button>
+    </div>
+    <div class="prop-row">
+      <label>FUENTE</label>
+      <select id="timer-font">
+        <option value="segoe" selected>Segoe UI (Default)</option>
+        <option value="bebas">Bebas Neue</option>
+        <option value="outfit">Outfit</option>
+        <option value="montserrat">Montserrat</option>
+      </select>
+    </div>
+    <div class="prop-row">
+      <label>RELLENO</label>
+      <input type="color" id="timer-color" value="#ffffff">
+    </div>
+    <div class="prop-row">
+      <label>BORDE</label>
+      <input type="color" id="timer-stroke-color" value="#000000">
+    </div>
+    <div class="prop-row">
+      <label>GROSOR BORDE</label>
+      <input type="range" id="timer-stroke-size" min="0" max="24" value="6">
+      <span id="timer-stroke-val">6</span>
+    </div>
+    <div class="prop-row">
+      <label>TAMAÑO</label>
+      <input type="range" id="timer-size" min="5" max="400" value="56">
+      <span id="timer-size-val">56</span>
+    </div>
+  </div>
+
   <div id="props-select" class="prop-group">
     <h2>[03] OBJETO SELECCIONADO</h2>
+    <button id="merge-layers-btn" class="prop-btn sec" type="button" onclick="mergeSelectedLayers()" style="display:none;">FUSIONAR CAPAS</button>
+    <button id="duplicate-layer-btn" class="prop-btn sec" type="button" onclick="duplicateSelectedLayer()">DUPLICAR CAPA</button>
     <button class="prop-btn danger" onclick="eliminarSeleccionado()">ELIMINAR OBJETO</button>
     <button class="prop-btn sec" onclick="deseleccionar()">DESELECCIONAR</button>
   </div>

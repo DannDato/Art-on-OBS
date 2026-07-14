@@ -178,6 +178,12 @@ function normalizeLayerPayload(payload) {
   const normalized = { ...payload };
   if (typeof normalized.hidden !== 'boolean') normalized.hidden = false;
   if (typeof normalized.zIndex !== 'number') normalized.zIndex = getMaxLayerZIndex() + 1;
+  if (normalized.tipo === 'imagen') {
+    if (!Number.isFinite(normalized.borderRadius)) normalized.borderRadius = 0;
+    if (!Number.isFinite(normalized.opacity)) normalized.opacity = 1;
+    normalized.opacity = Math.max(0, Math.min(1, normalized.opacity));
+    normalized.borderRadius = Math.max(0, normalized.borderRadius);
+  }
   return normalized;
 }
 
@@ -196,6 +202,102 @@ function getShapeLabel(shapeType) {
   if (shapeType === 'triangle') return 'TRIANGULO';
   if (shapeType === 'star') return 'ESTRELLA';
   return 'CUADRADO';
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildNextDuplicatedLayerName(sourceName, fallback = 'CAPA') {
+  const raw = String(sourceName || fallback || 'CAPA').trim();
+  const base = raw.replace(/\s+#\d+$/, '').trim() || fallback;
+  const exactRegex = new RegExp(`^${escapeRegex(base)}$`);
+  const dupRegex = new RegExp(`^${escapeRegex(base)}\\s+#(\\d+)$`);
+
+  let maxN = 1;
+  Object.values(objetos).forEach((obj) => {
+    const name = String(obj?.layerName || '').trim();
+    if (!name) return;
+    if (exactRegex.test(name)) {
+      maxN = Math.max(maxN, 1);
+      return;
+    }
+    const m = name.match(dupRegex);
+    if (m) maxN = Math.max(maxN, parseInt(m[1], 10) || 1);
+  });
+
+  return `${base} #${maxN + 1}`;
+}
+
+function buildDuplicatedLayerId(sourceObj) {
+  const now = Date.now();
+  const rand = Math.floor(Math.random() * 1000);
+  if (sourceObj?.tipo === 'imagen') return `img_${now}_${rand}`;
+  if (sourceObj?.tipo === 'texto') return `txt_${now}_${rand}`;
+  if (sourceObj?.tipo === 'forma') return `shape_${now}_${rand}`;
+  if (sourceObj?.tipo === 'timer') return `timer_${now}_${rand}`;
+  if (isDrawLayer(sourceObj)) return `draw_${now}_${rand}`;
+  return `obj_${now}_${rand}`;
+}
+
+function parseHmsToSeconds(raw, fallbackSeconds = 0) {
+  const text = String(raw || '').trim();
+  const m = text.match(/^(\d{1,2}):(\d{1,2}):(\d{1,2})$/);
+  if (!m) return fallbackSeconds;
+
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const sec = parseInt(m[3], 10);
+  if (!Number.isFinite(h) || !Number.isFinite(min) || !Number.isFinite(sec)) return fallbackSeconds;
+  if (min < 0 || min > 59 || sec < 0 || sec > 59) return fallbackSeconds;
+  return Math.max(0, (h * 3600) + (min * 60) + sec);
+}
+
+function formatSecondsAsHms(totalSeconds) {
+  const safe = Math.max(0, Math.floor(totalSeconds || 0));
+  const h = Math.floor(safe / 3600);
+  const m = Math.floor((safe % 3600) / 60);
+  const s = safe % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function getTimerCurrentSeconds(timerObj, nowMs = Date.now()) {
+  if (!timerObj) return 0;
+  const mode = timerObj?.timerMode === 'down' ? 'down' : 'up';
+  const startSeconds = Math.max(0, timerObj?.startSeconds || 0);
+  const limitSeconds = Math.max(0, timerObj?.limitSeconds || 0);
+  const fallbackCurrent = Number.isFinite(timerObj?.timerCurrentSeconds)
+    ? timerObj.timerCurrentSeconds
+    : startSeconds;
+
+  if (!timerObj.timerRunning) {
+    if (mode === 'down') return Math.max(limitSeconds, Math.min(startSeconds, fallbackCurrent));
+    return Math.min(limitSeconds, Math.max(startSeconds, fallbackCurrent));
+  }
+
+  const resumeSeconds = Number.isFinite(timerObj?.timerResumeSeconds)
+    ? timerObj.timerResumeSeconds
+    : fallbackCurrent;
+  const startedAtMs = Number.isFinite(timerObj?.startedAtMs) ? timerObj.startedAtMs : nowMs;
+  const elapsed = Math.max(0, Math.floor((nowMs - startedAtMs) / 1000));
+
+  if (mode === 'down') {
+    return Math.max(limitSeconds, resumeSeconds - elapsed);
+  }
+  return Math.min(limitSeconds, resumeSeconds + elapsed);
+}
+
+function getTimerText(timerObj, nowMs = Date.now()) {
+  return formatSecondsAsHms(getTimerCurrentSeconds(timerObj, nowMs));
+}
+
+function timerIsStillRunning(timerObj, nowMs = Date.now()) {
+  if (!timerObj || !timerObj.timerRunning) return false;
+  const mode = timerObj?.timerMode === 'down' ? 'down' : 'up';
+  const current = getTimerCurrentSeconds(timerObj, nowMs);
+  const limit = Math.max(0, timerObj?.limitSeconds || 0);
+  if (mode === 'down') return current > limit;
+  return current < limit;
 }
 
 function escapeHtml(text) {
@@ -243,7 +345,7 @@ function getLayerItems() {
   const drawLayersCount = Object.values(objetos).filter((obj) => isDrawLayer(obj)).length;
 
   return Object.entries(objetos)
-    .filter(([, obj]) => obj.tipo === 'imagen' || obj.tipo === 'texto' || obj.tipo === 'forma' || isDrawLayer(obj))
+    .filter(([, obj]) => obj.tipo === 'imagen' || obj.tipo === 'texto' || obj.tipo === 'forma' || obj.tipo === 'timer' || isDrawLayer(obj))
     .map(([id, obj], idx) => {
       const fallbackName = obj.tipo === 'imagen'
         ? (obj.fileName || `IMAGEN ${idx + 1}`)
@@ -251,6 +353,8 @@ function getLayerItems() {
           ? (getTextLayerName(obj.texto) || `TEXTO ${idx + 1}`)
           : obj.tipo === 'forma'
             ? `${getShapeLabel(obj.shapeType)} ${idx + 1}`
+          : obj.tipo === 'timer'
+            ? `TIMER ${idx + 1}`
           : `DIBUJO ${idx + 1}`;
 
       return {
@@ -353,6 +457,18 @@ function setSelection(ids = [], primaryId = null) {
 let drawingShape = false;
 let shapeStartPos = null;
 let shapePreview = null;
+let editingTextId = null;
+let isImageSearchOpen = false;
+
+function setImageSearchPanelOpen(open) {
+  const panel = document.getElementById('image-search-panel');
+  const toggleBtn = document.getElementById('image-search-toggle-btn');
+  if (!panel || !toggleBtn) return;
+
+  isImageSearchOpen = !!open;
+  panel.style.display = isImageSearchOpen ? 'block' : 'none';
+  toggleBtn.textContent = isImageSearchOpen ? 'OCULTAR BUSQUEDA' : 'BUSCAR';
+}
 
 function getShapeToolConfig() {
   const shapeTypeEl = document.getElementById('shape-type');
@@ -368,6 +484,239 @@ function getShapeToolConfig() {
     strokeWidth: strokeSizeEl ? parseInt(strokeSizeEl.value, 10) : 0,
     borderRadius: radiusEl ? parseInt(radiusEl.value, 10) : 0
   };
+}
+
+function getImageToolConfig() {
+  const radiusEl = document.getElementById('image-radius');
+  const opacityEl = document.getElementById('image-opacity');
+  const borderRadius = radiusEl ? parseInt(radiusEl.value, 10) : 0;
+  const opacityPercent = opacityEl ? parseInt(opacityEl.value, 10) : 100;
+
+  return {
+    borderRadius: Number.isFinite(borderRadius) ? Math.max(0, borderRadius) : 0,
+    opacity: Number.isFinite(opacityPercent) ? Math.max(0, Math.min(100, opacityPercent)) / 100 : 1
+  };
+}
+
+function resolveTextFontFamily(fontKey) {
+  if (fontKey === 'bebas') return "'Bebas Neue', sans-serif";
+  if (fontKey === 'outfit') return "'Outfit', sans-serif";
+  if (fontKey === 'montserrat') return "'Montserrat', sans-serif";
+  return "'Segoe UI', sans-serif";
+}
+
+function getTextToolConfig() {
+  const fillEl = document.getElementById('text-color');
+  const sizeEl = document.getElementById('text-size');
+  const strokeColorEl = document.getElementById('text-stroke-color');
+  const strokeSizeEl = document.getElementById('text-stroke-size');
+  const fontEl = document.getElementById('text-font');
+
+  const fontKey = fontEl ? fontEl.value : 'segoe';
+  const fontSize = sizeEl ? parseInt(sizeEl.value, 10) : 56;
+  const strokeWidth = strokeSizeEl ? parseInt(strokeSizeEl.value, 10) : 6;
+
+  return {
+    color: fillEl ? fillEl.value : '#ffffff',
+    strokeColor: strokeColorEl ? strokeColorEl.value : '#000000',
+    strokeWidth: Number.isFinite(strokeWidth) ? strokeWidth : 6,
+    fontSize: Number.isFinite(fontSize) ? fontSize : 56,
+    fontKey,
+    fontFamily: resolveTextFontFamily(fontKey)
+  };
+}
+
+function getTimerToolConfig() {
+  const modeEl = document.getElementById('timer-mode');
+  const startEl = document.getElementById('timer-start');
+  const limitEl = document.getElementById('timer-limit');
+  const fillEl = document.getElementById('timer-color');
+  const strokeColorEl = document.getElementById('timer-stroke-color');
+  const strokeSizeEl = document.getElementById('timer-stroke-size');
+  const sizeEl = document.getElementById('timer-size');
+  const fontEl = document.getElementById('timer-font');
+
+  const mode = modeEl && modeEl.value === 'down' ? 'down' : 'up';
+  const startSeconds = parseHmsToSeconds(startEl ? startEl.value : '00:00:00', 0);
+  const fallbackLimit = mode === 'down' ? 0 : ((99 * 3600) + (59 * 60) + 59);
+  const limitInputSeconds = parseHmsToSeconds(limitEl ? limitEl.value : '', fallbackLimit);
+  const limitSeconds = mode === 'down'
+    ? Math.min(startSeconds, limitInputSeconds)
+    : Math.max(startSeconds, limitInputSeconds);
+
+  const fontKey = fontEl ? fontEl.value : 'segoe';
+  const fontSize = sizeEl ? parseInt(sizeEl.value, 10) : 56;
+  const strokeWidth = strokeSizeEl ? parseInt(strokeSizeEl.value, 10) : 6;
+
+  return {
+    timerMode: mode,
+    startSeconds,
+    limitSeconds,
+    color: fillEl ? fillEl.value : '#ffffff',
+    strokeColor: strokeColorEl ? strokeColorEl.value : '#000000',
+    strokeWidth: Number.isFinite(strokeWidth) ? strokeWidth : 6,
+    fontSize: Number.isFinite(fontSize) ? fontSize : 56,
+    fontKey,
+    fontFamily: resolveTextFontFamily(fontKey)
+  };
+}
+
+function applyTextInputVisualConfig() {
+  if (!textEl || textEl.style.display === 'none') return;
+  const s = canvasScale();
+  const cfg = getTextToolConfig();
+  textEl.style.fontSize = `${cfg.fontSize * s}px`;
+  textEl.style.color = cfg.color;
+  textEl.style.fontFamily = cfg.fontFamily;
+}
+
+function inferTextFontKey(textObj) {
+  if (textObj && typeof textObj.fontKey === 'string') return textObj.fontKey;
+  const family = String(textObj?.fontFamily || '').toLowerCase();
+  if (family.includes('bebas')) return 'bebas';
+  if (family.includes('outfit')) return 'outfit';
+  if (family.includes('montserrat')) return 'montserrat';
+  return 'segoe';
+}
+
+function inferTimerFontKey(timerObj) {
+  if (timerObj && typeof timerObj.fontKey === 'string') return timerObj.fontKey;
+  const family = String(timerObj?.fontFamily || '').toLowerCase();
+  if (family.includes('bebas')) return 'bebas';
+  if (family.includes('outfit')) return 'outfit';
+  if (family.includes('montserrat')) return 'montserrat';
+  return 'segoe';
+}
+
+function syncTextControlsFromObject(textObj) {
+  if (!textObj || textObj.tipo !== 'texto') return;
+
+  const fillEl = document.getElementById('text-color');
+  const sizeEl = document.getElementById('text-size');
+  const sizeValEl = document.getElementById('text-size-val');
+  const strokeColorEl = document.getElementById('text-stroke-color');
+  const strokeSizeEl = document.getElementById('text-stroke-size');
+  const strokeValEl = document.getElementById('text-stroke-val');
+  const fontEl = document.getElementById('text-font');
+
+  if (fillEl) fillEl.value = textObj.color || '#ffffff';
+  if (sizeEl) sizeEl.value = String(textObj.fontSize ?? 56);
+  if (sizeValEl) sizeValEl.textContent = String(textObj.fontSize ?? 56);
+  if (strokeColorEl) strokeColorEl.value = textObj.strokeColor || '#000000';
+  if (strokeSizeEl) strokeSizeEl.value = String(textObj.strokeWidth ?? 6);
+  if (strokeValEl) strokeValEl.textContent = String(textObj.strokeWidth ?? 6);
+  if (fontEl) fontEl.value = inferTextFontKey(textObj);
+}
+
+function syncTimerControlsFromObject(timerObj) {
+  if (!timerObj || timerObj.tipo !== 'timer') return;
+
+  const modeEl = document.getElementById('timer-mode');
+  const startEl = document.getElementById('timer-start');
+  const limitEl = document.getElementById('timer-limit');
+  const fillEl = document.getElementById('timer-color');
+  const strokeColorEl = document.getElementById('timer-stroke-color');
+  const strokeSizeEl = document.getElementById('timer-stroke-size');
+  const strokeValEl = document.getElementById('timer-stroke-val');
+  const sizeEl = document.getElementById('timer-size');
+  const sizeValEl = document.getElementById('timer-size-val');
+  const fontEl = document.getElementById('timer-font');
+
+  if (modeEl) modeEl.value = timerObj.timerMode === 'down' ? 'down' : 'up';
+  if (startEl) startEl.value = formatSecondsAsHms(timerObj.startSeconds || 0);
+  if (limitEl) limitEl.value = formatSecondsAsHms(timerObj.limitSeconds || 0);
+  if (fillEl) fillEl.value = timerObj.color || '#ffffff';
+  if (strokeColorEl) strokeColorEl.value = timerObj.strokeColor || '#000000';
+  if (strokeSizeEl) strokeSizeEl.value = String(timerObj.strokeWidth ?? 6);
+  if (strokeValEl) strokeValEl.textContent = String(timerObj.strokeWidth ?? 6);
+  if (sizeEl) sizeEl.value = String(timerObj.fontSize ?? 56);
+  if (sizeValEl) sizeValEl.textContent = String(timerObj.fontSize ?? 56);
+  if (fontEl) fontEl.value = inferTimerFontKey(timerObj);
+  updateTimerActionButtons(timerObj);
+}
+
+function getSelectedTimerObject() {
+  const ids = getSelectedLayerIds();
+  if (ids.length !== 1) return null;
+  const obj = objetos[ids[0]];
+  if (!obj || obj.tipo !== 'timer') return null;
+  return obj;
+}
+
+function updateTimerActionButtons(timerObj = null) {
+  const playPauseBtn = document.getElementById('timer-playpause-btn');
+  const minus2Btn = document.getElementById('timer-minus-2-btn');
+  const plus2Btn = document.getElementById('timer-plus-2-btn');
+  const minus5Btn = document.getElementById('timer-minus-5-btn');
+  const plus5Btn = document.getElementById('timer-plus-5-btn');
+  if (!playPauseBtn || !minus2Btn || !plus2Btn || !minus5Btn || !plus5Btn) return;
+
+  const timer = timerObj || getSelectedTimerObject();
+  if (!timer) {
+    playPauseBtn.disabled = true;
+    minus2Btn.disabled = true;
+    plus2Btn.disabled = true;
+    minus5Btn.disabled = true;
+    plus5Btn.disabled = true;
+    playPauseBtn.textContent = 'PLAY';
+    return;
+  }
+
+  playPauseBtn.disabled = false;
+  minus2Btn.disabled = false;
+  plus2Btn.disabled = false;
+  minus5Btn.disabled = false;
+  plus5Btn.disabled = false;
+  playPauseBtn.textContent = timer.timerRunning ? 'PAUSA' : 'PLAY';
+}
+
+function togglePlayPauseSelectedTimer() {
+  const timer = getSelectedTimerObject();
+  if (!timer) return;
+
+  const now = Date.now();
+  const current = getTimerCurrentSeconds(timer, now);
+  timer.timerCurrentSeconds = current;
+
+  if (timer.timerRunning) {
+    timer.timerRunning = false;
+    timer.startedAtMs = null;
+    timer.timerResumeSeconds = current;
+  } else {
+    timer.timerRunning = true;
+    timer.startedAtMs = now;
+    timer.timerResumeSeconds = current;
+  }
+
+  const { _img, ...payload } = timer;
+  socket.emit('obj-add', payload);
+  updateTimerActionButtons(timer);
+  redraw();
+}
+
+function adjustSelectedTimerSeconds(deltaSeconds) {
+  const timer = getSelectedTimerObject();
+  if (!timer || !Number.isFinite(deltaSeconds) || deltaSeconds === 0) return;
+
+  const now = Date.now();
+  const current = getTimerCurrentSeconds(timer, now);
+  const startSeconds = Math.max(0, timer.startSeconds || 0);
+  const limitSeconds = Math.max(0, timer.limitSeconds || 0);
+  const mode = timer.timerMode === 'down' ? 'down' : 'up';
+
+  const minAllowed = mode === 'down' ? limitSeconds : startSeconds;
+  const maxAllowed = mode === 'down' ? startSeconds : limitSeconds;
+  const next = Math.max(minAllowed, Math.min(maxAllowed, current + deltaSeconds));
+
+  timer.timerCurrentSeconds = next;
+  timer.timerResumeSeconds = next;
+  if (timer.timerRunning) {
+    timer.startedAtMs = now;
+  }
+
+  const { _img, ...payload } = timer;
+  socket.emit('obj-add', payload);
+  redraw();
 }
 
 function syncShapeControlsFromObject(shapeObj) {
@@ -390,20 +739,234 @@ function syncShapeControlsFromObject(shapeObj) {
   if (radiusValEl) radiusValEl.textContent = String(shapeObj.borderRadius ?? 0);
 }
 
+function syncImageControlsFromObject(imageObj) {
+  if (!imageObj || imageObj.tipo !== 'imagen') return;
+
+  const radiusEl = document.getElementById('image-radius');
+  const radiusValEl = document.getElementById('image-radius-val');
+  const opacityEl = document.getElementById('image-opacity');
+  const opacityValEl = document.getElementById('image-opacity-val');
+  const radius = Math.max(0, Math.round(imageObj.borderRadius ?? 0));
+  const opacityPct = Math.max(0, Math.min(100, Math.round((imageObj.opacity ?? 1) * 100)));
+
+  if (radiusEl) radiusEl.value = String(radius);
+  if (radiusValEl) radiusValEl.textContent = String(radius);
+  if (opacityEl) opacityEl.value = String(opacityPct);
+  if (opacityValEl) opacityValEl.textContent = `${opacityPct}%`;
+}
+
 function refreshInspectorPanels() {
   const ids = getSelectedLayerIds();
   const hasSelection = herramienta === 'select' && ids.length > 0;
   const primaryObj = ids.length === 1 ? objetos[ids[0]] : null;
   const canEditSelectedShape = herramienta === 'select' && primaryObj && primaryObj.tipo === 'forma';
+  const canEditSelectedText = herramienta === 'select' && primaryObj && primaryObj.tipo === 'texto';
+  const canEditSelectedImage = herramienta === 'select' && primaryObj && primaryObj.tipo === 'imagen';
+  const mergeBtn = document.getElementById('merge-layers-btn');
+  const duplicateBtn = document.getElementById('duplicate-layer-btn');
 
   document.getElementById('props-draw').style.display = (herramienta === 'draw' || herramienta === 'eraser') ? 'flex' : 'none';
-  document.getElementById('props-text').style.display = herramienta === 'text' ? 'flex' : 'none';
+  document.getElementById('props-text').style.display = (herramienta === 'text' || canEditSelectedText) ? 'flex' : 'none';
+  document.getElementById('props-image').style.display = (herramienta === 'image' || canEditSelectedImage) ? 'flex' : 'none';
   document.getElementById('props-shape').style.display = (herramienta === 'shape' || canEditSelectedShape) ? 'flex' : 'none';
+  const canEditSelectedTimer = herramienta === 'select' && primaryObj && primaryObj.tipo === 'timer';
+  document.getElementById('props-timer').style.display = (herramienta === 'timer' || canEditSelectedTimer) ? 'flex' : 'none';
   document.getElementById('props-select').style.display = hasSelection ? 'flex' : 'none';
+  if (mergeBtn) mergeBtn.style.display = (hasSelection && ids.length >= 2) ? 'block' : 'none';
+  if (duplicateBtn) duplicateBtn.style.display = (hasSelection && ids.length === 1) ? 'block' : 'none';
 
   if (canEditSelectedShape) {
     syncShapeControlsFromObject(primaryObj);
   }
+  if (canEditSelectedText) {
+    syncTextControlsFromObject(primaryObj);
+  }
+  if (canEditSelectedImage) {
+    syncImageControlsFromObject(primaryObj);
+  }
+  if (canEditSelectedTimer) {
+    syncTimerControlsFromObject(primaryObj);
+  } else {
+    updateTimerActionButtons(null);
+  }
+
+  if (herramienta !== 'image') {
+    setImageSearchPanelOpen(false);
+  }
+}
+
+function applyImageControlsToSelectedImage() {
+  const ids = getSelectedLayerIds();
+  if (ids.length !== 1) return;
+
+  const id = ids[0];
+  const obj = objetos[id];
+  if (!obj || obj.tipo !== 'imagen') return;
+
+  const cfg = getImageToolConfig();
+  const nextRadius = cfg.borderRadius;
+  const nextOpacity = cfg.opacity;
+  const changed = (obj.borderRadius ?? 0) !== nextRadius || (obj.opacity ?? 1) !== nextOpacity;
+  if (!changed) return;
+
+  obj.borderRadius = nextRadius;
+  obj.opacity = nextOpacity;
+
+  const { _img, ...payload } = obj;
+  socket.emit('obj-add', payload);
+  renderLayersPanel();
+  redraw();
+}
+
+function traceRoundedRectPathOnCtx(targetCtx, x, y, w, h, radius) {
+  const r = Math.max(0, Math.min(radius || 0, Math.min(w, h) / 2));
+  targetCtx.beginPath();
+  if (r <= 0) {
+    targetCtx.rect(x, y, w, h);
+    return;
+  }
+  targetCtx.moveTo(x + r, y);
+  targetCtx.lineTo(x + w - r, y);
+  targetCtx.quadraticCurveTo(x + w, y, x + w, y + r);
+  targetCtx.lineTo(x + w, y + h - r);
+  targetCtx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  targetCtx.lineTo(x + r, y + h);
+  targetCtx.quadraticCurveTo(x, y + h, x, y + h - r);
+  targetCtx.lineTo(x, y + r);
+  targetCtx.quadraticCurveTo(x, y, x + r, y);
+  targetCtx.closePath();
+}
+
+function applyTimerControlsToSelectedTimer() {
+  const ids = getSelectedLayerIds();
+  if (ids.length !== 1) return;
+
+  const id = ids[0];
+  const obj = objetos[id];
+  if (!obj || obj.tipo !== 'timer') return;
+
+  const cfg = getTimerToolConfig();
+  const nextW = Math.max(260, cfg.fontSize * 4.8);
+  const nextH = cfg.fontSize * 1.5;
+  const changed = obj.timerMode !== cfg.timerMode ||
+    obj.startSeconds !== cfg.startSeconds ||
+    obj.limitSeconds !== cfg.limitSeconds ||
+    obj.color !== cfg.color ||
+    obj.strokeColor !== cfg.strokeColor ||
+    obj.strokeWidth !== cfg.strokeWidth ||
+    obj.fontSize !== cfg.fontSize ||
+    obj.fontFamily !== cfg.fontFamily ||
+    obj.fontKey !== cfg.fontKey ||
+    obj.w !== nextW ||
+    obj.h !== nextH;
+
+  if (!changed) return;
+
+  const now = Date.now();
+  const currentSeconds = getTimerCurrentSeconds(obj, now);
+
+  obj.timerMode = cfg.timerMode;
+  obj.startSeconds = cfg.startSeconds;
+  obj.limitSeconds = cfg.limitSeconds;
+  obj.color = cfg.color;
+  obj.strokeColor = cfg.strokeColor;
+  obj.strokeWidth = cfg.strokeWidth;
+  obj.fontSize = cfg.fontSize;
+  obj.fontFamily = cfg.fontFamily;
+  obj.fontKey = cfg.fontKey;
+  obj.w = nextW;
+  obj.h = nextH;
+
+  const clampedCurrent = cfg.timerMode === 'down'
+    ? Math.max(cfg.limitSeconds, Math.min(cfg.startSeconds, currentSeconds))
+    : Math.min(cfg.limitSeconds, Math.max(cfg.startSeconds, currentSeconds));
+  obj.timerCurrentSeconds = clampedCurrent;
+
+  if (obj.timerRunning) {
+    obj.timerResumeSeconds = clampedCurrent;
+    obj.startedAtMs = now;
+  } else {
+    obj.timerResumeSeconds = clampedCurrent;
+    obj.startedAtMs = null;
+  }
+
+  const { _img, ...payload } = obj;
+  socket.emit('obj-add', payload);
+  renderLayersPanel();
+  redraw();
+}
+
+function createTimerAt(pos) {
+  const cfg = getTimerToolConfig();
+  const id = `timer_${Date.now()}`;
+  const obj = {
+    id,
+    tipo: 'timer',
+    x: pos.x,
+    y: pos.y,
+    w: Math.max(260, cfg.fontSize * 4.8),
+    h: cfg.fontSize * 1.5,
+    timerMode: cfg.timerMode,
+    startSeconds: cfg.startSeconds,
+    limitSeconds: cfg.limitSeconds,
+    timerCurrentSeconds: cfg.startSeconds,
+    timerResumeSeconds: cfg.startSeconds,
+    startedAtMs: null,
+    timerRunning: false,
+    color: cfg.color,
+    strokeColor: cfg.strokeColor,
+    strokeWidth: cfg.strokeWidth,
+    fontSize: cfg.fontSize,
+    fontFamily: cfg.fontFamily,
+    fontKey: cfg.fontKey,
+    zIndex: getMaxLayerZIndex() + 1,
+    hidden: false,
+    layerName: `TIMER ${nextLayerOrdinal('TIMER')}`
+  };
+
+  socket.emit('obj-add', obj);
+  setSelection([id], id);
+  toast('⏱️ Timer agregado');
+  setTool('select');
+}
+
+function applyTextControlsToSelectedText() {
+  const ids = getSelectedLayerIds();
+  if (ids.length !== 1) return;
+
+  const id = ids[0];
+  const obj = objetos[id];
+  if (!obj || obj.tipo !== 'texto') return;
+
+  const cfg = getTextToolConfig();
+  const nextText = String(obj.texto || '');
+  const nextW = Math.max(200, nextText.length * cfg.fontSize * 0.6);
+  const nextH = cfg.fontSize * 1.5;
+
+  const changed = obj.color !== cfg.color ||
+    obj.strokeColor !== cfg.strokeColor ||
+    obj.strokeWidth !== cfg.strokeWidth ||
+    obj.fontSize !== cfg.fontSize ||
+    obj.fontFamily !== cfg.fontFamily ||
+    obj.fontKey !== cfg.fontKey ||
+    obj.w !== nextW ||
+    obj.h !== nextH;
+
+  if (!changed) return;
+
+  obj.color = cfg.color;
+  obj.strokeColor = cfg.strokeColor;
+  obj.strokeWidth = cfg.strokeWidth;
+  obj.fontSize = cfg.fontSize;
+  obj.fontFamily = cfg.fontFamily;
+  obj.fontKey = cfg.fontKey;
+  obj.w = nextW;
+  obj.h = nextH;
+
+  const { _img, ...payload } = obj;
+  socket.emit('obj-add', payload);
+  renderLayersPanel();
+  redraw();
 }
 
 function applyShapeControlsToSelectedShape() {
@@ -552,7 +1115,7 @@ function renderLayersPanel() {
 
   root.innerHTML = items.map((layer, index) => {
     const layerType = layer.isDraw ? 'DRAWING' : layer.tipo === 'forma' ? 'FORMA' : layer.tipo.toUpperCase();
-    const layerIcon = layer.isDraw ? '✎' : layer.tipo === 'texto' ? 'T' : layer.tipo === 'forma' ? '◈' : '▦';
+    const layerIcon = layer.isDraw ? '✎' : layer.tipo === 'texto' ? 'T' : layer.tipo === 'forma' ? '◈' : layer.tipo === 'timer' ? '⏱' : '▦';
     const layerIndex = String(items.length - index).padStart(2, '0');
     const visibilityBadge = `<span class="layer-badge ${layer.hidden ? 'hidden' : 'visible'}">${layer.hidden ? 'HIDDEN' : 'VISIBLE'}</span>`;
     const lockBadge = layer.isLocked ? '<span class="layer-badge locked">LOCKED</span>' : '';
@@ -805,17 +1368,23 @@ function deshacerUltimaAccion() {
   redraw();
 }
 
-function abrirTextInput(ox, oy, cx, cy) {
+function abrirTextInput(ox, oy, cx, cy, options = {}) {
   const r = canvas.getBoundingClientRect();
-  const s = canvasScale();
+  const cfg = getTextToolConfig();
+  const { initialText = '', editId = null } = options;
+
   textPos = { x: ox, y: oy };
+  editingTextId = editId;
 
   textEl.style.display = 'block';
   textEl.style.left = (cx - r.left) + 'px';
   textEl.style.top = (cy - r.top) + 'px';
-  textEl.style.fontSize = (parseInt(document.getElementById('text-size').value, 10) * s) + 'px';
-  textEl.style.color = document.getElementById('text-color').value;
-  textEl.value = '';
+  textEl.style.fontFamily = cfg.fontFamily;
+  textEl.style.color = cfg.color;
+  textEl.value = initialText;
+  applyTextInputVisualConfig();
+  textEl.style.height = 'auto';
+  textEl.style.height = textEl.scrollHeight + 'px';
 
   setTimeout(() => {
     textEl.focus();
@@ -826,6 +1395,28 @@ function cerrarTextInput() {
   textEl.style.display = 'none';
   textEl.value = '';
   textPos = null;
+  editingTextId = null;
+}
+
+function onDoubleClick(e) {
+  if (herramienta !== 'select') return;
+
+  const pos = toOverlay(e.clientX, e.clientY);
+  const hit = hitTest(pos.x, pos.y);
+  if (!hit || !objetos[hit]) return;
+
+  const obj = objetos[hit];
+  if (obj.tipo !== 'texto' || obj.hidden) return;
+
+  e.preventDefault();
+  setSelection([hit], hit);
+  syncTextControlsFromObject(obj);
+
+  const r = canvas.getBoundingClientRect();
+  const s = canvasScale();
+  const cx = r.left + (obj.x * s);
+  const cy = r.top + (obj.y * s);
+  abrirTextInput(obj.x, obj.y, cx, cy, { initialText: obj.texto || '', editId: hit });
 }
 
 function seleccionarTodo() {
@@ -843,6 +1434,266 @@ function deseleccionar() {
   setSelection([], null);
   renderLayersPanel();
   redraw();
+}
+
+function duplicateSelectedLayer() {
+  const ids = getSelectedLayerIds();
+  if (ids.length !== 1) {
+    toast('⚠️ Selecciona una sola capa para duplicar');
+    return;
+  }
+
+  const source = objetos[ids[0]];
+  if (!source) return;
+
+  const duplicateId = buildDuplicatedLayerId(source);
+  const fallbackName = source.tipo === 'texto'
+    ? 'TEXTO'
+    : source.tipo === 'imagen'
+      ? 'IMAGEN'
+      : source.tipo === 'forma'
+        ? 'FORMA'
+        : source.tipo === 'timer'
+          ? 'TIMER'
+          : 'CAPA';
+
+  const copy = {
+    ...source,
+    id: duplicateId,
+    zIndex: getMaxLayerZIndex() + 1,
+    hidden: false,
+    layerName: buildNextDuplicatedLayerName(source.layerName, fallbackName)
+  };
+
+  if (Array.isArray(source.lineas)) {
+    copy.lineas = source.lineas.map((seg) => ({ ...seg }));
+  }
+
+  if (source.tipo === 'imagen' && source._img) {
+    copy._img = source._img;
+  } else {
+    delete copy._img;
+  }
+
+  objetos[duplicateId] = copy;
+  setSelection([duplicateId], duplicateId);
+
+  const { _img, ...payload } = copy;
+  socket.emit('obj-add', payload);
+
+  renderLayersPanel();
+  redraw();
+  toast('📄 Capa duplicada');
+}
+
+function drawShapeOnCtx(targetCtx, shape, offsetX, offsetY) {
+  const x = (shape.x || 0) - offsetX;
+  const y = (shape.y || 0) - offsetY;
+  const w = Math.max(2, shape.w || 2);
+  const h = Math.max(2, shape.h || 2);
+  const type = shape.shapeType || 'square';
+  const radius = Math.max(0, Math.min(shape.borderRadius || 0, Math.min(w, h) / 2));
+
+  targetCtx.beginPath();
+  if (type === 'circle') {
+    targetCtx.ellipse(x + (w / 2), y + (h / 2), w / 2, h / 2, 0, 0, Math.PI * 2);
+  } else if (type === 'triangle') {
+    targetCtx.moveTo(x + (w / 2), y);
+    targetCtx.lineTo(x + w, y + h);
+    targetCtx.lineTo(x, y + h);
+    targetCtx.closePath();
+  } else if (type === 'star') {
+    const cx = x + (w / 2);
+    const cy = y + (h / 2);
+    const outer = Math.min(w, h) / 2;
+    const inner = outer * 0.5;
+    let angle = -Math.PI / 2;
+    for (let i = 0; i < 5; i++) {
+      const ox = cx + (Math.cos(angle) * outer);
+      const oy = cy + (Math.sin(angle) * outer);
+      if (i === 0) targetCtx.moveTo(ox, oy);
+      else targetCtx.lineTo(ox, oy);
+      angle += Math.PI / 5;
+      const ix = cx + (Math.cos(angle) * inner);
+      const iy = cy + (Math.sin(angle) * inner);
+      targetCtx.lineTo(ix, iy);
+      angle += Math.PI / 5;
+    }
+    targetCtx.closePath();
+  } else if (radius <= 0) {
+    targetCtx.rect(x, y, w, h);
+  } else {
+    const r = radius;
+    targetCtx.moveTo(x + r, y);
+    targetCtx.lineTo(x + w - r, y);
+    targetCtx.quadraticCurveTo(x + w, y, x + w, y + r);
+    targetCtx.lineTo(x + w, y + h - r);
+    targetCtx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    targetCtx.lineTo(x + r, y + h);
+    targetCtx.quadraticCurveTo(x, y + h, x, y + h - r);
+    targetCtx.lineTo(x, y + r);
+    targetCtx.quadraticCurveTo(x, y, x + r, y);
+    targetCtx.closePath();
+  }
+
+  if (shape.fillColor) {
+    targetCtx.fillStyle = shape.fillColor;
+    targetCtx.fill();
+  }
+  const sw = Math.max(0, shape.strokeWidth || 0);
+  if (sw > 0) {
+    targetCtx.strokeStyle = shape.strokeColor || '#07e2ff';
+    targetCtx.lineWidth = sw;
+    targetCtx.stroke();
+  }
+}
+
+function drawObjectOnCtx(targetCtx, obj, offsetX, offsetY) {
+  if (!obj || obj.hidden) return;
+
+  if (obj.tipo === 'imagen' && obj._img) {
+    const x = (obj.x || 0) - offsetX;
+    const y = (obj.y || 0) - offsetY;
+    const w = Math.max(1, obj.w || 1);
+    const h = Math.max(1, obj.h || 1);
+    const radius = Math.max(0, obj.borderRadius || 0);
+    const opacity = Math.max(0, Math.min(1, Number.isFinite(obj.opacity) ? obj.opacity : 1));
+
+    targetCtx.save();
+    targetCtx.globalAlpha = opacity;
+    if (radius > 0) {
+      traceRoundedRectPathOnCtx(targetCtx, x, y, w, h, radius);
+      targetCtx.clip();
+    }
+    targetCtx.drawImage(obj._img, x, y, w, h);
+    targetCtx.restore();
+    return;
+  }
+
+  if (obj.tipo === 'texto') {
+    const x = (obj.x || 0) - offsetX;
+    const y = (obj.y || 0) - offsetY;
+    const fontFamily = obj.fontFamily || "'Segoe UI', sans-serif";
+    const strokeWidth = Math.max(0, obj.strokeWidth ?? 6);
+    targetCtx.font = `900 ${obj.fontSize || 48}px ${fontFamily}`;
+    targetCtx.fillStyle = obj.color || '#fff';
+    targetCtx.lineWidth = strokeWidth;
+    targetCtx.strokeStyle = obj.strokeColor || '#000';
+    if (strokeWidth > 0) targetCtx.strokeText(obj.texto || '', x, y + (obj.fontSize || 48));
+    targetCtx.fillText(obj.texto || '', x, y + (obj.fontSize || 48));
+    return;
+  }
+
+  if (obj.tipo === 'timer') {
+    const x = (obj.x || 0) - offsetX;
+    const y = (obj.y || 0) - offsetY;
+    const fontFamily = obj.fontFamily || "'Segoe UI', sans-serif";
+    const strokeWidth = Math.max(0, obj.strokeWidth ?? 6);
+    const value = getTimerText(obj, Date.now());
+    targetCtx.font = `900 ${obj.fontSize || 48}px ${fontFamily}`;
+    targetCtx.fillStyle = obj.color || '#fff';
+    targetCtx.lineWidth = strokeWidth;
+    targetCtx.strokeStyle = obj.strokeColor || '#000';
+    if (strokeWidth > 0) targetCtx.strokeText(value, x, y + (obj.fontSize || 48));
+    targetCtx.fillText(value, x, y + (obj.fontSize || 48));
+    return;
+  }
+
+  if (obj.tipo === 'forma') {
+    drawShapeOnCtx(targetCtx, obj, offsetX, offsetY);
+    return;
+  }
+
+  if (obj.tipo === 'trazo' && obj.lineas && obj.lineas.length > 0) {
+    if (obj.compuesto) {
+      let currentMode = null;
+      for (const seg of obj.lineas) {
+        const mode = seg.modo === 'borrar' ? 'destination-out' : 'source-over';
+        if (mode !== currentMode) {
+          targetCtx.globalCompositeOperation = mode;
+          currentMode = mode;
+        }
+        targetCtx.strokeStyle = seg.color;
+        targetCtx.lineWidth = seg.grosor;
+        targetCtx.lineCap = 'round';
+        targetCtx.lineJoin = 'round';
+        targetCtx.beginPath();
+        targetCtx.moveTo((obj.x || 0) - offsetX + seg.x1, (obj.y || 0) - offsetY + seg.y1);
+        targetCtx.lineTo((obj.x || 0) - offsetX + seg.x2, (obj.y || 0) - offsetY + seg.y2);
+        targetCtx.stroke();
+      }
+      targetCtx.globalCompositeOperation = 'source-over';
+    }
+  }
+}
+
+async function mergeSelectedLayers() {
+  const selectedIds = getSelectedLayerIds().filter((id) => !!objetos[id]);
+  if (selectedIds.length < 2) return;
+
+  const confirmed = await confirmarAccion({
+    title: 'Fusionar capas',
+    message: `Se fusionaran ${selectedIds.length} capas en una sola imagen para optimizar consumo. Continuar?`,
+    confirmText: 'Fusionar',
+    cancelText: 'Cancelar'
+  });
+  if (!confirmed) return;
+
+  const entries = selectedIds
+    .map((id) => [id, objetos[id]])
+    .filter(([, obj]) => !!obj && !obj.hidden)
+    .sort(([, a], [, b]) => (typeof a.zIndex === 'number' ? a.zIndex : 0) - (typeof b.zIndex === 'number' ? b.zIndex : 0));
+
+  if (entries.length < 2) {
+    toast('⚠️ Selecciona al menos 2 capas visibles');
+    return;
+  }
+
+  const boundsList = entries
+    .map(([, obj]) => getSelectableBounds(obj))
+    .filter((b) => !!b);
+
+  if (boundsList.length === 0) {
+    toast('⚠️ No se pudo calcular area de fusion');
+    return;
+  }
+
+  const minX = Math.floor(Math.min(...boundsList.map((b) => b.x)));
+  const minY = Math.floor(Math.min(...boundsList.map((b) => b.y)));
+  const maxX = Math.ceil(Math.max(...boundsList.map((b) => b.x + b.w)));
+  const maxY = Math.ceil(Math.max(...boundsList.map((b) => b.y + b.h)));
+  const outW = Math.max(1, maxX - minX);
+  const outH = Math.max(1, maxY - minY);
+
+  const mergeCanvas = document.createElement('canvas');
+  mergeCanvas.width = outW;
+  mergeCanvas.height = outH;
+  const mergeCtx = mergeCanvas.getContext('2d');
+  if (!mergeCtx) return;
+
+  entries.forEach(([, obj]) => drawObjectOnCtx(mergeCtx, obj, minX, minY));
+  const dataUrl = mergeCanvas.toDataURL('image/png');
+
+  const maxZ = Math.max(...entries.map(([, obj]) => (typeof obj.zIndex === 'number' ? obj.zIndex : 0)));
+  const mergedId = `img_merge_${Date.now()}`;
+  const mergedObj = {
+    id: mergedId,
+    tipo: 'imagen',
+    url: dataUrl,
+    x: minX,
+    y: minY,
+    w: outW,
+    h: outH,
+    zIndex: maxZ,
+    hidden: false,
+    layerName: `FUSION ${nextLayerOrdinal('FUSION')}`
+  };
+
+  guardarEstadoHistorial();
+  entries.forEach(([id, obj]) => socket.emit('obj-remove', { id, url: obj.url, tipo: obj.tipo }));
+  socket.emit('obj-add', mergedObj);
+  setSelection([mergedId], mergedId);
+  toast('🧬 Capas fusionadas');
 }
 
 async function eliminarSeleccionado() {
@@ -940,6 +1791,7 @@ async function subirImagen(file) {
   const id = 'img_' + Date.now();
   const url = data.url;
   const fileLayerName = getFileLayerName(file);
+  const cfg = getImageToolConfig();
   socket.emit('obj-add', {
     id,
     tipo: 'imagen',
@@ -949,12 +1801,104 @@ async function subirImagen(file) {
     y: 200,
     w: 400,
     h: 300,
+    borderRadius: cfg.borderRadius,
+    opacity: cfg.opacity,
     zIndex: getMaxLayerZIndex() + 1,
     hidden: false,
     layerName: fileLayerName || `IMAGEN ${nextLayerOrdinal('IMAGEN')}`
   });
   toast('🖼️ Imagen enviada');
   setTool('select');
+}
+
+async function subirImagenRemota(url, pos = null) {
+  const res = await fetch('/api/import-image-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url })
+  });
+
+  const data = await res.json();
+  if (!data.ok) {
+    toast(`⚠️ ${data.error || 'No se pudo importar imagen'}`);
+    return;
+  }
+
+  const id = 'img_' + Date.now();
+  const x = pos && Number.isFinite(pos.x) ? pos.x : 200;
+  const y = pos && Number.isFinite(pos.y) ? pos.y : 200;
+  const cfg = getImageToolConfig();
+
+  socket.emit('obj-add', {
+    id,
+    tipo: 'imagen',
+    url: data.url,
+    fileName: 'Imagen web',
+    x,
+    y,
+    w: 400,
+    h: 300,
+    borderRadius: cfg.borderRadius,
+    opacity: cfg.opacity,
+    zIndex: getMaxLayerZIndex() + 1,
+    hidden: false,
+    layerName: `IMAGEN ${nextLayerOrdinal('IMAGEN')}`
+  });
+
+  toast('🌐 Imagen web agregada');
+  setTool('select');
+}
+
+function renderImageSearchResults(items) {
+  const root = document.getElementById('image-search-results');
+  if (!root) return;
+
+  if (!items || items.length === 0) {
+    root.innerHTML = '';
+    return;
+  }
+
+  root.innerHTML = items.map((item, idx) => {
+    const title = escapeHtml(item.title || `Resultado ${idx + 1}`);
+    const thumb = escapeHtml(item.thumbnailUrl || item.imageUrl || '');
+    const full = escapeHtml(item.imageUrl || '');
+    return `
+      <div class="image-result-card" draggable="true" data-image-url="${full}" title="Arrastra al canvas">
+        <img class="image-result-thumb" src="${thumb}" alt="${title}" loading="lazy">
+        <div class="image-result-title">${title}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function buscarImagenesWeb() {
+  const qEl = document.getElementById('image-search-query');
+  const statusEl = document.getElementById('image-search-status');
+  if (!qEl || !statusEl) return;
+
+  const q = qEl.value.trim();
+  if (!q) {
+    statusEl.textContent = 'Escribe un termino de busqueda.';
+    renderImageSearchResults([]);
+    return;
+  }
+
+  statusEl.textContent = 'Buscando imagenes web...';
+  renderImageSearchResults([]);
+
+  try {
+    const res = await fetch(`/api/image-search?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    if (!data.ok) {
+      statusEl.textContent = data.error || 'No se pudo buscar imagenes';
+      return;
+    }
+
+    statusEl.textContent = `${data.results.length} resultado(s) desde Wikimedia Commons. Arrastra una imagen al canvas.`;
+    renderImageSearchResults(data.results || []);
+  } catch (_) {
+    statusEl.textContent = 'Error de red al buscar imagenes.';
+  }
 }
 
 function toast(msg) {
@@ -1046,6 +1990,13 @@ function onDown(e) {
     drawingShape = true;
     shapeStartPos = { x: pos.x, y: pos.y };
     shapePreview = buildShapeObjectFromDrag(shapeStartPos, pos, getShapeToolConfig(), e.shiftKey, e.altKey);
+    redraw();
+    return;
+  }
+
+  if (herramienta === 'timer') {
+    guardarEstadoHistorial();
+    createTimerAt(pos);
     redraw();
   }
 }
@@ -1249,6 +2200,7 @@ canvas.addEventListener('mousedown', onDown);
 canvas.addEventListener('mousemove', onMove);
 canvas.addEventListener('mouseup', onUp);
 canvas.addEventListener('mouseleave', onUp);
+canvas.addEventListener('dblclick', onDoubleClick);
 
 textEl.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -1261,28 +2213,55 @@ textEl.addEventListener('keydown', (e) => {
     const texto = textEl.value.trim();
 
     if (texto && textPos) {
-      const fontSize = parseInt(document.getElementById('text-size').value, 10);
-      const color = document.getElementById('text-color').value;
-      const id = 'txt_' + Date.now();
+      const cfg = getTextToolConfig();
       const textLayerName = getTextLayerName(texto);
-      const w = Math.max(200, texto.length * fontSize * 0.6);
-      const h = fontSize * 1.5;
+      const w = Math.max(200, texto.length * cfg.fontSize * 0.6);
+      const h = cfg.fontSize * 1.5;
 
-      socket.emit('obj-add', {
-        id,
-        tipo: 'texto',
-        texto,
-        x: textPos.x,
-        y: textPos.y,
-        w,
-        h,
-        color,
-        fontSize,
-        zIndex: getMaxLayerZIndex() + 1,
-        hidden: false,
-        layerName: textLayerName || `TEXTO ${nextLayerOrdinal('TEXTO')}`
-      });
-      toast('💬 Texto agregado');
+      if (editingTextId && objetos[editingTextId] && objetos[editingTextId].tipo === 'texto') {
+        const prev = objetos[editingTextId];
+        const updated = {
+          ...prev,
+          texto,
+          x: textPos.x,
+          y: textPos.y,
+          w,
+          h,
+          color: cfg.color,
+          strokeColor: cfg.strokeColor,
+          strokeWidth: cfg.strokeWidth,
+          fontSize: cfg.fontSize,
+          fontFamily: cfg.fontFamily,
+          fontKey: cfg.fontKey,
+          layerName: textLayerName || prev.layerName || `TEXTO ${nextLayerOrdinal('TEXTO')}`
+        };
+        objetos[editingTextId] = updated;
+        const { _img, ...payload } = updated;
+        socket.emit('obj-add', payload);
+        setSelection([editingTextId], editingTextId);
+        toast('✍️ Texto actualizado');
+      } else {
+        const id = 'txt_' + Date.now();
+        socket.emit('obj-add', {
+          id,
+          tipo: 'texto',
+          texto,
+          x: textPos.x,
+          y: textPos.y,
+          w,
+          h,
+          color: cfg.color,
+          strokeColor: cfg.strokeColor,
+          strokeWidth: cfg.strokeWidth,
+          fontSize: cfg.fontSize,
+          fontFamily: cfg.fontFamily,
+          fontKey: cfg.fontKey,
+          zIndex: getMaxLayerZIndex() + 1,
+          hidden: false,
+          layerName: textLayerName || `TEXTO ${nextLayerOrdinal('TEXTO')}`
+        });
+        toast('💬 Texto agregado');
+      }
     }
 
     cerrarTextInput();
@@ -1298,6 +2277,50 @@ textEl.addEventListener('input', () => {
 document.getElementById('file-input').addEventListener('change', function() {
   if (this.files[0]) subirImagen(this.files[0]);
 });
+
+const imageUploadBtn = document.getElementById('image-upload-btn');
+if (imageUploadBtn) {
+  imageUploadBtn.addEventListener('click', triggerUpload);
+}
+
+const imageSearchToggleBtn = document.getElementById('image-search-toggle-btn');
+if (imageSearchToggleBtn) {
+  imageSearchToggleBtn.addEventListener('click', () => {
+    setImageSearchPanelOpen(!isImageSearchOpen);
+    if (isImageSearchOpen) {
+      const input = document.getElementById('image-search-query');
+      if (input) setTimeout(() => input.focus(), 0);
+    }
+  });
+}
+
+const imageSearchBtn = document.getElementById('image-search-btn');
+if (imageSearchBtn) {
+  imageSearchBtn.addEventListener('click', buscarImagenesWeb);
+}
+
+const imageSearchInput = document.getElementById('image-search-query');
+if (imageSearchInput) {
+  imageSearchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      buscarImagenesWeb();
+    }
+  });
+}
+
+const imageSearchResults = document.getElementById('image-search-results');
+if (imageSearchResults) {
+  imageSearchResults.addEventListener('dragstart', (e) => {
+    const card = e.target.closest('.image-result-card');
+    if (!card || !e.dataTransfer) return;
+    const url = card.dataset.imageUrl || '';
+    if (!url) return;
+    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('text/plain', url);
+    e.dataTransfer.setData('text/uri-list', url);
+  });
+}
 
 const layersListEl = document.getElementById('layers-list');
 if (layersListEl) {
@@ -1382,7 +2405,16 @@ dropZone.addEventListener('drop', (e) => {
   e.preventDefault();
   dropOverlay.style.display = 'none';
   const file = e.dataTransfer.files[0];
-  if (file && file.type.startsWith('image/')) subirImagen(file);
+  if (file && file.type.startsWith('image/')) {
+    subirImagen(file);
+    return;
+  }
+
+  const droppedUrl = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
+  if (droppedUrl && /^https?:\/\//i.test(droppedUrl.trim())) {
+    const pos = toOverlay(e.clientX, e.clientY);
+    subirImagenRemota(droppedUrl.trim(), pos);
+  }
 });
 
 window.addEventListener('keydown', (e) => {
@@ -1410,7 +2442,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (e.key === 'Delete' || e.key === 'Supr' || e.key === 'Backspace') {
+  if (e.ctrlKey && (e.key === 'Delete' || e.key === 'Supr' || e.key === 'Backspace')) {
     e.preventDefault();
     eliminarSeleccionado();
     return;
@@ -1431,7 +2463,7 @@ window.addEventListener('keydown', (e) => {
       break;
     case 'i':
     case 'f':
-      triggerUpload();
+      setTool('image');
       break;
     case 't':
       setTool('text');
@@ -1439,6 +2471,9 @@ window.addEventListener('keydown', (e) => {
     case 'g':
     case 's':
       setTool('shape');
+      break;
+    case 'r':
+      setTool('timer');
       break;
   }
 });
@@ -1464,7 +2499,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (e.key === 'Delete' || e.key === 'Backspace') {
+  if (e.ctrlKey && (e.key === 'Delete' || e.key === 'Backspace')) {
     eliminarSeleccionado();
   }
 });
@@ -1472,6 +2507,67 @@ window.addEventListener('keydown', (e) => {
 document.getElementById('draw-size').addEventListener('input', function() {
   document.getElementById('draw-size-val').textContent = this.value;
 });
+
+document.getElementById('text-stroke-size').addEventListener('input', function() {
+  document.getElementById('text-stroke-val').textContent = this.value;
+  applyTextControlsToSelectedText();
+  applyTextInputVisualConfig();
+});
+
+document.getElementById('text-size').addEventListener('input', () => {
+  document.getElementById('text-size-val').textContent = document.getElementById('text-size').value;
+  applyTextControlsToSelectedText();
+  applyTextInputVisualConfig();
+});
+document.getElementById('text-color').addEventListener('input', () => {
+  applyTextControlsToSelectedText();
+  applyTextInputVisualConfig();
+});
+document.getElementById('text-stroke-color').addEventListener('input', () => {
+  applyTextControlsToSelectedText();
+  applyTextInputVisualConfig();
+});
+document.getElementById('text-font').addEventListener('change', () => {
+  applyTextControlsToSelectedText();
+  applyTextInputVisualConfig();
+});
+
+document.getElementById('timer-size').addEventListener('input', () => {
+  document.getElementById('timer-size-val').textContent = document.getElementById('timer-size').value;
+  applyTimerControlsToSelectedTimer();
+});
+
+document.getElementById('timer-stroke-size').addEventListener('input', () => {
+  document.getElementById('timer-stroke-val').textContent = document.getElementById('timer-stroke-size').value;
+  applyTimerControlsToSelectedTimer();
+});
+
+document.getElementById('timer-color').addEventListener('input', applyTimerControlsToSelectedTimer);
+document.getElementById('timer-stroke-color').addEventListener('input', applyTimerControlsToSelectedTimer);
+document.getElementById('timer-font').addEventListener('change', applyTimerControlsToSelectedTimer);
+document.getElementById('timer-mode').addEventListener('change', applyTimerControlsToSelectedTimer);
+document.getElementById('timer-start').addEventListener('change', applyTimerControlsToSelectedTimer);
+document.getElementById('timer-limit').addEventListener('change', applyTimerControlsToSelectedTimer);
+
+const timerPlayPauseBtn = document.getElementById('timer-playpause-btn');
+if (timerPlayPauseBtn) timerPlayPauseBtn.addEventListener('click', togglePlayPauseSelectedTimer);
+
+const timerMinus2Btn = document.getElementById('timer-minus-2-btn');
+if (timerMinus2Btn) timerMinus2Btn.addEventListener('click', () => adjustSelectedTimerSeconds(-2));
+
+const timerPlus2Btn = document.getElementById('timer-plus-2-btn');
+if (timerPlus2Btn) timerPlus2Btn.addEventListener('click', () => adjustSelectedTimerSeconds(2));
+
+const timerMinus5Btn = document.getElementById('timer-minus-5-btn');
+if (timerMinus5Btn) timerMinus5Btn.addEventListener('click', () => adjustSelectedTimerSeconds(-5));
+
+const timerPlus5Btn = document.getElementById('timer-plus-5-btn');
+if (timerPlus5Btn) timerPlus5Btn.addEventListener('click', () => adjustSelectedTimerSeconds(5));
+
+setInterval(() => {
+  const hasRunningVisibleTimer = Object.values(objetos).some((o) => o && o.tipo === 'timer' && !o.hidden && timerIsStillRunning(o));
+  if (hasRunningVisibleTimer) redraw();
+}, 250);
 
 document.getElementById('shape-stroke-size').addEventListener('input', function() {
   document.getElementById('shape-stroke-val').textContent = this.value;
@@ -1486,6 +2582,16 @@ document.getElementById('shape-radius').addEventListener('input', function() {
 document.getElementById('shape-fill-color').addEventListener('input', applyShapeControlsToSelectedShape);
 document.getElementById('shape-stroke-color').addEventListener('input', applyShapeControlsToSelectedShape);
 document.getElementById('shape-type').addEventListener('change', applyShapeControlsToSelectedShape);
+
+document.getElementById('image-radius').addEventListener('input', function() {
+  document.getElementById('image-radius-val').textContent = this.value;
+  applyImageControlsToSelectedImage();
+});
+
+document.getElementById('image-opacity').addEventListener('input', function() {
+  document.getElementById('image-opacity-val').textContent = `${this.value}%`;
+  applyImageControlsToSelectedImage();
+});
 
 window.addEventListener('resize', fitCanvas);
 fitCanvas();

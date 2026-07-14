@@ -251,6 +251,56 @@ function drawShape(shape) {
   }
 }
 
+function traceRoundedRectPath(x, y, w, h, radius) {
+  const r = Math.max(0, Math.min(radius || 0, Math.min(w, h) / 2));
+  ctx.beginPath();
+  if (r <= 0) {
+    ctx.rect(x, y, w, h);
+    return;
+  }
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function getTimerCurrentSecondsRender(timerObj, nowMs = Date.now()) {
+  if (!timerObj) return 0;
+  const mode = timerObj?.timerMode === 'down' ? 'down' : 'up';
+  const startSeconds = Math.max(0, timerObj?.startSeconds || 0);
+  const limitSeconds = Math.max(0, timerObj?.limitSeconds || 0);
+  const fallbackCurrent = Number.isFinite(timerObj?.timerCurrentSeconds)
+    ? timerObj.timerCurrentSeconds
+    : startSeconds;
+
+  if (!timerObj.timerRunning) {
+    if (mode === 'down') return Math.max(limitSeconds, Math.min(startSeconds, fallbackCurrent));
+    return Math.min(limitSeconds, Math.max(startSeconds, fallbackCurrent));
+  }
+
+  const resumeSeconds = Number.isFinite(timerObj?.timerResumeSeconds)
+    ? timerObj.timerResumeSeconds
+    : fallbackCurrent;
+  const startedAtMs = Number.isFinite(timerObj?.startedAtMs) ? timerObj.startedAtMs : nowMs;
+  const elapsed = Math.max(0, Math.floor((nowMs - startedAtMs) / 1000));
+  if (mode === 'down') return Math.max(limitSeconds, resumeSeconds - elapsed);
+  return Math.min(limitSeconds, resumeSeconds + elapsed);
+}
+
+function formatTimerSecondsRender(totalSeconds) {
+  const safe = Math.max(0, Math.floor(totalSeconds || 0));
+  const h = Math.floor(safe / 3600);
+  const m = Math.floor((safe % 3600) / 60);
+  const s = safe % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 const REDRAW_MAX_FPS = 30;
 const REDRAW_MIN_FRAME_MS = 1000 / REDRAW_MAX_FPS;
 let lastRedrawTs = 0;
@@ -278,16 +328,40 @@ function redrawNow() {
     if (obj.hidden) continue;
 
     if (obj.tipo === 'imagen' && obj._img) {
+      const radius = Math.max(0, obj.borderRadius || 0);
+      const opacity = Math.max(0, Math.min(1, Number.isFinite(obj.opacity) ? obj.opacity : 1));
+      ctx.save();
+      ctx.globalAlpha = opacity;
+      if (radius > 0) {
+        traceRoundedRectPath(obj.x, obj.y, Math.max(1, obj.w), Math.max(1, obj.h), radius);
+        ctx.clip();
+      }
       ctx.drawImage(obj._img, obj.x, obj.y, obj.w, obj.h);
+      ctx.restore();
     } else if (obj.tipo === 'texto') {
-      ctx.font = `900 ${obj.fontSize || 48}px 'Segoe UI', sans-serif`;
+      const fontFamily = obj.fontFamily || "'Segoe UI', sans-serif";
+      const strokeWidth = Math.max(0, obj.strokeWidth ?? 6);
+      ctx.font = `900 ${obj.fontSize || 48}px ${fontFamily}`;
       ctx.fillStyle = obj.color || '#fff';
       ctx.shadowColor = 'rgba(0,0,0,0.9)';
       ctx.shadowBlur = 0;
-      ctx.lineWidth = 6;
-      ctx.strokeStyle = '#000';
-      ctx.strokeText(obj.texto, obj.x, obj.y + (obj.fontSize || 48));
+      ctx.lineWidth = strokeWidth;
+      ctx.strokeStyle = obj.strokeColor || '#000';
+      if (strokeWidth > 0) ctx.strokeText(obj.texto, obj.x, obj.y + (obj.fontSize || 48));
       ctx.fillText(obj.texto, obj.x, obj.y + (obj.fontSize || 48));
+      ctx.shadowBlur = 0;
+    } else if (obj.tipo === 'timer') {
+      const fontFamily = obj.fontFamily || "'Segoe UI', sans-serif";
+      const strokeWidth = Math.max(0, obj.strokeWidth ?? 6);
+      const timerText = formatTimerSecondsRender(getTimerCurrentSecondsRender(obj, Date.now()));
+      ctx.font = `900 ${obj.fontSize || 48}px ${fontFamily}`;
+      ctx.fillStyle = obj.color || '#fff';
+      ctx.shadowColor = 'rgba(0,0,0,0.9)';
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = strokeWidth;
+      ctx.strokeStyle = obj.strokeColor || '#000';
+      if (strokeWidth > 0) ctx.strokeText(timerText, obj.x, obj.y + (obj.fontSize || 48));
+      ctx.fillText(timerText, obj.x, obj.y + (obj.fontSize || 48));
       ctx.shadowBlur = 0;
     } else if (obj.tipo === 'forma') {
       drawShape(obj);
