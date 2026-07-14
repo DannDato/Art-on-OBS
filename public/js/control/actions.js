@@ -158,6 +158,58 @@ socket.on('limpiar-todo', () => {
   redraw();
 });
 
+socket.on('sync-state', (payload) => {
+  const incoming = Array.isArray(payload?.objects) ? payload.objects : [];
+  const nextState = {};
+
+  if (incoming.length === 0) {
+    objetos = {};
+    setSelection([], null);
+    ensureDefaultDrawLayer();
+    renderLayersPanel();
+    redraw();
+    return;
+  }
+
+  let pendingImages = 0;
+  let settledImages = 0;
+  const finalize = () => {
+    objetos = nextState;
+    const selected = getSelectedLayerIds().filter((id) => !!nextState[id]);
+    const primary = selected.length > 0 ? selected[0] : null;
+    setSelection(selected, primary);
+    ensureDefaultDrawLayer({ emitRemote: false });
+    renderLayersPanel();
+    redraw();
+  };
+
+  incoming.forEach((obj) => {
+    if (!obj || !obj.id) return;
+    const normalized = normalizeLayerPayload(obj);
+
+    if (normalized.tipo === 'imagen' && normalized.url) {
+      pendingImages += 1;
+      const img = new Image();
+      img.src = normalized.url;
+      img.onload = () => {
+        normalized._img = img;
+        nextState[normalized.id] = normalized;
+        settledImages += 1;
+        if (settledImages >= pendingImages) finalize();
+      };
+      img.onerror = () => {
+        nextState[normalized.id] = normalized;
+        settledImages += 1;
+        if (settledImages >= pendingImages) finalize();
+      };
+    } else {
+      nextState[normalized.id] = normalized;
+    }
+  });
+
+  if (pendingImages === 0) finalize();
+});
+
 function nextLayerOrdinal(prefix) {
   const regex = new RegExp(`^${prefix}\\s+(\\d+)$`);
   let max = 0;
@@ -325,7 +377,8 @@ function buildDrawLayer(id = `draw_layer_${Date.now()}`) {
   };
 }
 
-function ensureDefaultDrawLayer() {
+function ensureDefaultDrawLayer(options = {}) {
+  const { emitRemote = true } = options;
   const drawLayers = Object.values(objetos).filter((obj) => isDrawLayer(obj));
   if (drawLayers.length > 0) {
     if (!objetos[activeDrawLayerId] || !isDrawLayer(objetos[activeDrawLayerId])) {
@@ -338,7 +391,7 @@ function ensureDefaultDrawLayer() {
   defaultLayer.layerName = 'DIBUJO 1';
   activeDrawLayerId = defaultLayer.id;
   objetos[defaultLayer.id] = defaultLayer;
-  socket.emit('obj-add', defaultLayer);
+  if (emitRemote) socket.emit('obj-add', defaultLayer);
 }
 
 function getLayerItems() {
@@ -2598,6 +2651,6 @@ fitCanvas();
 startLiveFpsMonitor();
 updateLiveMetaBar();
 initLayersViewMode();
-ensureDefaultDrawLayer();
+ensureDefaultDrawLayer({ emitRemote: false });
 renderLayersPanel();
 setTool('select');

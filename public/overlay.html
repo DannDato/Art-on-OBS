@@ -430,6 +430,50 @@ socket.on('limpiar-todo', () => {
   ctx.clearRect(0, 0, 1920, 1080);
 });
 
+socket.on('sync-state', (payload) => {
+  const incoming = Array.isArray(payload?.objects) ? payload.objects : [];
+  const nextState = {};
+
+  if (incoming.length === 0) {
+    objetos = {};
+    redraw();
+    return;
+  }
+
+  let pendingImages = 0;
+  let settledImages = 0;
+  const finalize = () => {
+    objetos = nextState;
+    redraw();
+  };
+
+  incoming.forEach((obj) => {
+    if (!obj || !obj.id) return;
+    const normalized = { ...obj };
+
+    if (normalized.tipo === 'imagen' && normalized.url) {
+      pendingImages += 1;
+      const img = new Image();
+      img.src = normalized.url;
+      img.onload = () => {
+        normalized._img = img;
+        nextState[normalized.id] = normalized;
+        settledImages += 1;
+        if (settledImages >= pendingImages) finalize();
+      };
+      img.onerror = () => {
+        nextState[normalized.id] = normalized;
+        settledImages += 1;
+        if (settledImages >= pendingImages) finalize();
+      };
+    } else {
+      nextState[normalized.id] = normalized;
+    }
+  });
+
+  if (pendingImages === 0) finalize();
+});
+
 setInterval(() => {
   const hasRunningTimer = Object.values(objetos).some((o) => o && o.tipo === 'timer' && !o.hidden && o.timerRunning);
   if (hasRunningTimer) redraw();

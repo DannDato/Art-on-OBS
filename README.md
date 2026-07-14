@@ -3,6 +3,11 @@
 
 DrawCast es una infraestructura web modular basada en **Node.js, Express y WebSockets (Socket.io)** que permite a un streamer o sus moderadores pintar, inyectar textos, arrastrar imágenes/GIFs y controlar capas en tiempo real directamente sobre una fuente de navegador de OBS Studio.
 
+## Variables de entorno
+
+- `DC_MS_PASSWORD`: contraseña del panel de control.
+- `SLEEP_TIME`: tiempo en milisegundos para reiniciar el lienzo si no hay clientes en control. Recomendado: `600000` (10 minutos).
+
 ---
 
 ## 🗺️ ¿Cómo funciona? (Flujo de Arquitectura)
