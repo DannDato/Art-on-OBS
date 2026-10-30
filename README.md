@@ -1,7 +1,7 @@
-# ⚡ DrawCast DannDato
+# ⚡ Art-On-Obs DannDato
 > **Sistema Profesional Modular de Overlay Interactivo en Tiempo Real para OBS Studio.**
 
-DrawCast es una infraestructura web modular basada en **Node.js, Express y WebSockets (Socket.io)** que permite a un streamer o sus moderadores pintar, inyectar textos, arrastrar imágenes/GIFs y controlar capas en tiempo real directamente sobre una fuente de navegador de OBS Studio.
+Art-On-Obs es una infraestructura web modular basada en **Node.js, Express y WebSockets (Socket.io)** que permite a un streamer o sus moderadores pintar, inyectar textos, arrastrar imágenes/GIFs y controlar capas en tiempo real directamente sobre una fuente de navegador de OBS Studio.
 
 ## Variables de entorno
 
